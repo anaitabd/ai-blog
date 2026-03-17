@@ -4,6 +4,8 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
 import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
+import * as ec2 from 'aws-cdk-lib/aws-ec2'
+import * as rds from 'aws-cdk-lib/aws-rds'
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions'
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks'
 import * as events from 'aws-cdk-lib/aws-events'
@@ -31,6 +33,36 @@ export class AiBlogStack extends cdk.Stack {
       sortKey: { name: 'priority', type: dynamodb.AttributeType.NUMBER },
     })
 
+    // ─── VPC for RDS ─────────────────────────────────────────
+    const vpc = new ec2.Vpc(this, 'BlogVpc', {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [
+        { name: 'public', subnetType: ec2.SubnetType.PUBLIC },
+      ],
+    })
+
+    // ─── RDS PostgreSQL ──────────────────────────────────────
+    const database = new rds.DatabaseInstance(this, 'Database', {
+      engine: rds.DatabaseInstanceEngine.postgres({
+        version: rds.PostgresEngineVersion.VER_16,
+      }),
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      credentials: rds.Credentials.fromGeneratedSecret('aiblog', {
+        secretName: 'ai-blog-db-secret',
+      }),
+      databaseName: 'aiblog',
+      allocatedStorage: 20,
+      deleteAutomatedBackups: true,
+      removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
+      deletionProtection: false,
+      publiclyAccessible: true,
+      storageEncrypted: true,
+    })
+    database.connections.allowFromAnyIpv4(ec2.Port.tcp(5432))
+
     // ─── S3 Bucket for Images ───────────────────────────────
     const imagesBucket = new s3.Bucket(this, 'ImagesBucket', {
       bucketName: `ai-blog-images-${this.account}`,
@@ -41,7 +73,7 @@ export class AiBlogStack extends cdk.Stack {
     // ─── CloudFront CDN for Images ──────────────────────────
     const imagesCdn = new cloudfront.Distribution(this, 'ImagesCdn', {
       defaultBehavior: {
-        origin: new origins.S3Origin(imagesBucket),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(imagesBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
       },
@@ -60,7 +92,7 @@ export class AiBlogStack extends cdk.Stack {
       TOPICS_TABLE: topicsTable.tableName,
       S3_BUCKET: imagesBucket.bucketName,
       CLOUDFRONT_DOMAIN: imagesCdn.distributionDomainName,
-      BEDROCK_MODEL_ID: 'anthropic.claude-sonnet-4-5',
+      BEDROCK_MODEL_ID: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
       NODE_OPTIONS: '--enable-source-maps',
     }
 
@@ -172,5 +204,13 @@ export class AiBlogStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'TopicsTableName', { value: topicsTable.tableName })
     new cdk.CfnOutput(this, 'StateMachineArn', { value: stateMachine.stateMachineArn })
     new cdk.CfnOutput(this, 'ImagesBucketName', { value: imagesBucket.bucketName })
+    new cdk.CfnOutput(this, 'DbEndpoint', {
+      value: database.dbInstanceEndpointAddress,
+      description: 'RDS PostgreSQL endpoint',
+    })
+    new cdk.CfnOutput(this, 'DbSecretArn', {
+      value: database.secret!.secretArn,
+      description: 'Secrets Manager ARN — used by aws:setup to build DATABASE_URL',
+    })
   }
 }

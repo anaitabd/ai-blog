@@ -1,0 +1,10 @@
+{
+  "AiBlogStack": {
+    "ImagesBucketName": "ai-blog-images-670294435884",
+    "TopicsTableName": "ai-blog-topics",
+    "DbEndpoint": "aiblogstack-databaseb269d8bb-qpuyxpx4cnol.ca7cgiw4oqw1.us-east-1.rds.amazonaws.com",
+    "DbSecretArn": "arn:aws:secretsmanager:us-east-1:670294435884:secret:ai-blog-db-secret-VGh8FE",
+    "StateMachineArn": "arn:aws:states:us-east-1:670294435884:stateMachine:ai-blog-pipeline",
+    "ImagesCdnUrl": "https://d1vqj5mvj2lux4.cloudfront.net"
+  }
+}

@@ -1,0 +1,292 @@
+{
+  "/AiBlogStack/TopicsTable": [
+    {
+      "type": "aws:cdk:hasPhysicalName",
+      "data": {
+        "Ref": "TopicsTableB8A0263C"
+      }
+    }
+  ],
+  "/AiBlogStack/ImagesCdnUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImagesCdnUrl"
+    }
+  ],
+  "/AiBlogStack/TopicsTableName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicsTableName"
+    }
+  ],
+  "/AiBlogStack/StateMachineArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "StateMachineArn"
+    }
+  ],
+  "/AiBlogStack/ImagesBucketName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImagesBucketName"
+    }
+  ],
+  "/AiBlogStack/DbEndpoint": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DbEndpoint"
+    }
+  ],
+  "/AiBlogStack/DbSecretArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DbSecretArn"
+    }
+  ],
+  "/AiBlogStack/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/AiBlogStack/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/AiBlogStack/TopicsTable/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicsTableB8A0263C"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpc9559DF64"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcIGWD106C243"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcVPCGWAC37039A"
+    }
+  ],
+  "/AiBlogStack/Database/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseB269D8BB"
+    }
+  ],
+  "/AiBlogStack/ImagesBucket/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImagesBucket1E86AFB2"
+    }
+  ],
+  "/AiBlogStack/ImagesCdn/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImagesCdnBC2AA66B"
+    }
+  ],
+  "/AiBlogStack/TopicSeeder/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicSeederB67629F4"
+    }
+  ],
+  "/AiBlogStack/ContentGenerator/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ContentGenerator08D4D895"
+    }
+  ],
+  "/AiBlogStack/Publisher/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PublisherF0355618"
+    }
+  ],
+  "/AiBlogStack/BlogPipeline/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogPipelineC080753B"
+    }
+  ],
+  "/AiBlogStack/TopicPicker/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicPickerAEFC9C2D"
+    }
+  ],
+  "/AiBlogStack/PipelineSchedule/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PipelineSchedule3887CED6"
+    }
+  ],
+  "/AiBlogStack/PipelineSchedule/AllowEventRuleAiBlogStackTopicPicker78F6E7CA": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PipelineScheduleAllowEventRuleAiBlogStackTopicPicker78F6E7CA494B4208"
+    }
+  ],
+  "/AiBlogStack/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet1Subnet90EE9619"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet1RouteTable2FE20BA5"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet1RouteTableAssociation69A61911"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet1DefaultRouteB51326C5"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet2Subnet78FE8BDE"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet2RouteTable14DA6808"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet2RouteTableAssociation52EE4624"
+    }
+  ],
+  "/AiBlogStack/BlogVpc/publicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogVpcpublicSubnet2DefaultRouteB6C4E61F"
+    }
+  ],
+  "/AiBlogStack/Database/SubnetGroup/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSubnetGroup7D60F180"
+    }
+  ],
+  "/AiBlogStack/Database/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecurityGroup5C91FDCB"
+    }
+  ],
+  "/AiBlogStack/Database/Secret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AiBlogStackDatabaseSecret46AB96373fdaad7efa858a3daf9490cf0a702aeb"
+    }
+  ],
+  "/AiBlogStack/ImagesBucket/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImagesBucketPolicy5ED12B6C"
+    }
+  ],
+  "/AiBlogStack/TopicSeeder/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicSeederServiceRoleC529EDDD"
+    }
+  ],
+  "/AiBlogStack/ContentGenerator/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ContentGeneratorServiceRole151A72B7"
+    }
+  ],
+  "/AiBlogStack/Publisher/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PublisherServiceRoleF4D9160F"
+    }
+  ],
+  "/AiBlogStack/BlogPipeline/Role/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogPipelineRoleFDC228E3"
+    }
+  ],
+  "/AiBlogStack/TopicPicker/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicPickerServiceRole33211B14"
+    }
+  ],
+  "/AiBlogStack/Database/Secret/Attachment/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecretAttachmentE5D1B020"
+    }
+  ],
+  "/AiBlogStack/ImagesCdn/Origin1/S3OriginAccessControl/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ImagesCdnOrigin1S3OriginAccessControl216FD174"
+    }
+  ],
+  "/AiBlogStack/TopicSeeder/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicSeederServiceRoleDefaultPolicy24443948"
+    }
+  ],
+  "/AiBlogStack/ContentGenerator/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ContentGeneratorServiceRoleDefaultPolicy56C733DA"
+    }
+  ],
+  "/AiBlogStack/Publisher/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PublisherServiceRoleDefaultPolicy0E21E942"
+    }
+  ],
+  "/AiBlogStack/BlogPipeline/Role/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BlogPipelineRoleDefaultPolicy942BACA1"
+    }
+  ],
+  "/AiBlogStack/TopicPicker/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TopicPickerServiceRoleDefaultPolicy401BC6A7"
+    }
+  ]
+}

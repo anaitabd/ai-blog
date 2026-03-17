@@ -1,0 +1,1387 @@
+{
+ "Description": "AI-powered blog infrastructure with AWS Bedrock",
+ "Resources": {
+  "TopicsTableB8A0263C": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "id",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "status",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "priority",
+      "AttributeType": "N"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "GlobalSecondaryIndexes": [
+     {
+      "IndexName": "status-priority-index",
+      "KeySchema": [
+       {
+        "AttributeName": "status",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "priority",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     }
+    ],
+    "KeySchema": [
+     {
+      "AttributeName": "id",
+      "KeyType": "HASH"
+     }
+    ],
+    "TableName": "ai-blog-topics"
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicsTable/Resource"
+   }
+  },
+  "BlogVpc9559DF64": {
+   "Type": "AWS::EC2::VPC",
+   "Properties": {
+    "CidrBlock": "10.0.0.0/16",
+    "EnableDnsHostnames": true,
+    "EnableDnsSupport": true,
+    "InstanceTenancy": "default",
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "AiBlogStack/BlogVpc"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/Resource"
+   }
+  },
+  "BlogVpcpublicSubnet1Subnet90EE9619": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1a",
+    "CidrBlock": "10.0.0.0/17",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "Name",
+      "Value": "AiBlogStack/BlogVpc/publicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "BlogVpc9559DF64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet1/Subnet"
+   }
+  },
+  "BlogVpcpublicSubnet1RouteTable2FE20BA5": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "AiBlogStack/BlogVpc/publicSubnet1"
+     }
+    ],
+    "VpcId": {
+     "Ref": "BlogVpc9559DF64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet1/RouteTable"
+   }
+  },
+  "BlogVpcpublicSubnet1RouteTableAssociation69A61911": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "BlogVpcpublicSubnet1RouteTable2FE20BA5"
+    },
+    "SubnetId": {
+     "Ref": "BlogVpcpublicSubnet1Subnet90EE9619"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet1/RouteTableAssociation"
+   }
+  },
+  "BlogVpcpublicSubnet1DefaultRouteB51326C5": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "BlogVpcIGWD106C243"
+    },
+    "RouteTableId": {
+     "Ref": "BlogVpcpublicSubnet1RouteTable2FE20BA5"
+    }
+   },
+   "DependsOn": [
+    "BlogVpcVPCGWAC37039A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet1/DefaultRoute"
+   }
+  },
+  "BlogVpcpublicSubnet2Subnet78FE8BDE": {
+   "Type": "AWS::EC2::Subnet",
+   "Properties": {
+    "AvailabilityZone": "us-east-1b",
+    "CidrBlock": "10.0.128.0/17",
+    "MapPublicIpOnLaunch": true,
+    "Tags": [
+     {
+      "Key": "aws-cdk:subnet-name",
+      "Value": "public"
+     },
+     {
+      "Key": "aws-cdk:subnet-type",
+      "Value": "Public"
+     },
+     {
+      "Key": "Name",
+      "Value": "AiBlogStack/BlogVpc/publicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "BlogVpc9559DF64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet2/Subnet"
+   }
+  },
+  "BlogVpcpublicSubnet2RouteTable14DA6808": {
+   "Type": "AWS::EC2::RouteTable",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "AiBlogStack/BlogVpc/publicSubnet2"
+     }
+    ],
+    "VpcId": {
+     "Ref": "BlogVpc9559DF64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet2/RouteTable"
+   }
+  },
+  "BlogVpcpublicSubnet2RouteTableAssociation52EE4624": {
+   "Type": "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties": {
+    "RouteTableId": {
+     "Ref": "BlogVpcpublicSubnet2RouteTable14DA6808"
+    },
+    "SubnetId": {
+     "Ref": "BlogVpcpublicSubnet2Subnet78FE8BDE"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet2/RouteTableAssociation"
+   }
+  },
+  "BlogVpcpublicSubnet2DefaultRouteB6C4E61F": {
+   "Type": "AWS::EC2::Route",
+   "Properties": {
+    "DestinationCidrBlock": "0.0.0.0/0",
+    "GatewayId": {
+     "Ref": "BlogVpcIGWD106C243"
+    },
+    "RouteTableId": {
+     "Ref": "BlogVpcpublicSubnet2RouteTable14DA6808"
+    }
+   },
+   "DependsOn": [
+    "BlogVpcVPCGWAC37039A"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/publicSubnet2/DefaultRoute"
+   }
+  },
+  "BlogVpcIGWD106C243": {
+   "Type": "AWS::EC2::InternetGateway",
+   "Properties": {
+    "Tags": [
+     {
+      "Key": "Name",
+      "Value": "AiBlogStack/BlogVpc"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/IGW"
+   }
+  },
+  "BlogVpcVPCGWAC37039A": {
+   "Type": "AWS::EC2::VPCGatewayAttachment",
+   "Properties": {
+    "InternetGatewayId": {
+     "Ref": "BlogVpcIGWD106C243"
+    },
+    "VpcId": {
+     "Ref": "BlogVpc9559DF64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogVpc/VPCGW"
+   }
+  },
+  "DatabaseSubnetGroup7D60F180": {
+   "Type": "AWS::RDS::DBSubnetGroup",
+   "Properties": {
+    "DBSubnetGroupDescription": "Subnet group for Database database",
+    "SubnetIds": [
+     {
+      "Ref": "BlogVpcpublicSubnet1Subnet90EE9619"
+     },
+     {
+      "Ref": "BlogVpcpublicSubnet2Subnet78FE8BDE"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Database/SubnetGroup/Default"
+   }
+  },
+  "DatabaseSecurityGroup5C91FDCB": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for Database database",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "SecurityGroupIngress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "from 0.0.0.0/0:5432",
+      "FromPort": 5432,
+      "IpProtocol": "tcp",
+      "ToPort": 5432
+     }
+    ],
+    "VpcId": {
+     "Ref": "BlogVpc9559DF64"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Database/SecurityGroup/Resource"
+   }
+  },
+  "AiBlogStackDatabaseSecret46AB96373fdaad7efa858a3daf9490cf0a702aeb": {
+   "Type": "AWS::SecretsManager::Secret",
+   "Properties": {
+    "Description": {
+     "Fn::Join": [
+      "",
+      [
+       "Generated by the CDK for stack: ",
+       {
+        "Ref": "AWS::StackName"
+       }
+      ]
+     ]
+    },
+    "GenerateSecretString": {
+     "ExcludeCharacters": " %+~`#$&*()|[]{}:;<>?!'/@\"\\",
+     "GenerateStringKey": "password",
+     "PasswordLength": 30,
+     "SecretStringTemplate": "{\"username\":\"aiblog\"}"
+    },
+    "Name": "ai-blog-db-secret"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Database/Secret/Resource"
+   }
+  },
+  "DatabaseSecretAttachmentE5D1B020": {
+   "Type": "AWS::SecretsManager::SecretTargetAttachment",
+   "Properties": {
+    "SecretId": {
+     "Ref": "AiBlogStackDatabaseSecret46AB96373fdaad7efa858a3daf9490cf0a702aeb"
+    },
+    "TargetId": {
+     "Ref": "DatabaseB269D8BB"
+    },
+    "TargetType": "AWS::RDS::DBInstance"
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Database/Secret/Attachment/Resource"
+   }
+  },
+  "DatabaseB269D8BB": {
+   "Type": "AWS::RDS::DBInstance",
+   "Properties": {
+    "AllocatedStorage": "20",
+    "CopyTagsToSnapshot": true,
+    "DBInstanceClass": "db.t3.micro",
+    "DBName": "aiblog",
+    "DBSubnetGroupName": {
+     "Ref": "DatabaseSubnetGroup7D60F180"
+    },
+    "DeleteAutomatedBackups": true,
+    "DeletionProtection": false,
+    "Engine": "postgres",
+    "EngineVersion": "16",
+    "MasterUserPassword": {
+     "Fn::Join": [
+      "",
+      [
+       "{{resolve:secretsmanager:",
+       {
+        "Ref": "AiBlogStackDatabaseSecret46AB96373fdaad7efa858a3daf9490cf0a702aeb"
+       },
+       ":SecretString:password::}}"
+      ]
+     ]
+    },
+    "MasterUsername": "aiblog",
+    "PubliclyAccessible": true,
+    "StorageEncrypted": true,
+    "StorageType": "gp2",
+    "VPCSecurityGroups": [
+     {
+      "Fn::GetAtt": [
+       "DatabaseSecurityGroup5C91FDCB",
+       "GroupId"
+      ]
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Snapshot",
+   "DeletionPolicy": "Snapshot",
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Database/Resource"
+   }
+  },
+  "ImagesBucket1E86AFB2": {
+   "Type": "AWS::S3::Bucket",
+   "Properties": {
+    "BucketName": "ai-blog-images-670294435884",
+    "PublicAccessBlockConfiguration": {
+     "BlockPublicAcls": true,
+     "BlockPublicPolicy": true,
+     "IgnorePublicAcls": true,
+     "RestrictPublicBuckets": true
+    }
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ImagesBucket/Resource"
+   }
+  },
+  "ImagesBucketPolicy5ED12B6C": {
+   "Type": "AWS::S3::BucketPolicy",
+   "Properties": {
+    "Bucket": {
+     "Ref": "ImagesBucket1E86AFB2"
+    },
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "s3:GetObject",
+       "Condition": {
+        "StringEquals": {
+         "AWS:SourceArn": {
+          "Fn::Join": [
+           "",
+           [
+            "arn:",
+            {
+             "Ref": "AWS::Partition"
+            },
+            ":cloudfront::",
+            {
+             "Ref": "AWS::AccountId"
+            },
+            ":distribution/",
+            {
+             "Ref": "ImagesCdnBC2AA66B"
+            }
+           ]
+          ]
+         }
+        }
+       },
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+       },
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          {
+           "Fn::GetAtt": [
+            "ImagesBucket1E86AFB2",
+            "Arn"
+           ]
+          },
+          "/*"
+         ]
+        ]
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ImagesBucket/Policy/Resource"
+   }
+  },
+  "ImagesCdnOrigin1S3OriginAccessControl216FD174": {
+   "Type": "AWS::CloudFront::OriginAccessControl",
+   "Properties": {
+    "OriginAccessControlConfig": {
+     "Name": "AiBlogStackImagesCdnOrigin1S3OriginAccessControl387430DE",
+     "OriginAccessControlOriginType": "s3",
+     "SigningBehavior": "always",
+     "SigningProtocol": "sigv4"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ImagesCdn/Origin1/S3OriginAccessControl/Resource"
+   }
+  },
+  "ImagesCdnBC2AA66B": {
+   "Type": "AWS::CloudFront::Distribution",
+   "Properties": {
+    "DistributionConfig": {
+     "DefaultCacheBehavior": {
+      "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+      "Compress": true,
+      "TargetOriginId": "AiBlogStackImagesCdnOrigin1366A76F1",
+      "ViewerProtocolPolicy": "redirect-to-https"
+     },
+     "Enabled": true,
+     "HttpVersion": "http2",
+     "IPV6Enabled": true,
+     "Origins": [
+      {
+       "DomainName": {
+        "Fn::GetAtt": [
+         "ImagesBucket1E86AFB2",
+         "RegionalDomainName"
+        ]
+       },
+       "Id": "AiBlogStackImagesCdnOrigin1366A76F1",
+       "OriginAccessControlId": {
+        "Fn::GetAtt": [
+         "ImagesCdnOrigin1S3OriginAccessControl216FD174",
+         "Id"
+        ]
+       },
+       "S3OriginConfig": {
+        "OriginAccessIdentity": ""
+       }
+      }
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ImagesCdn/Resource"
+   }
+  },
+  "TopicSeederServiceRoleC529EDDD": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicSeeder/ServiceRole/Resource"
+   }
+  },
+  "TopicSeederServiceRoleDefaultPolicy24443948": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchWriteItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "TopicsTableB8A0263C",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "TopicsTableB8A0263C",
+             "Arn"
+            ]
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TopicSeederServiceRoleDefaultPolicy24443948",
+    "Roles": [
+     {
+      "Ref": "TopicSeederServiceRoleC529EDDD"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicSeeder/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "TopicSeederB67629F4": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
+     "S3Key": "3b29ae6c87c886f1c45f2433a8cd16a7b9c1906508460991832cefc515342616.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "TOPICS_TABLE": {
+       "Ref": "TopicsTableB8A0263C"
+      },
+      "S3_BUCKET": {
+       "Ref": "ImagesBucket1E86AFB2"
+      },
+      "CLOUDFRONT_DOMAIN": {
+       "Fn::GetAtt": [
+        "ImagesCdnBC2AA66B",
+        "DomainName"
+       ]
+      },
+      "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "NODE_OPTIONS": "--enable-source-maps"
+     }
+    },
+    "FunctionName": "ai-blog-topic-seeder",
+    "Handler": "index.handler",
+    "Role": {
+     "Fn::GetAtt": [
+      "TopicSeederServiceRoleC529EDDD",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 120
+   },
+   "DependsOn": [
+    "TopicSeederServiceRoleDefaultPolicy24443948",
+    "TopicSeederServiceRoleC529EDDD"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicSeeder/Resource",
+    "aws:asset:path": "asset.3b29ae6c87c886f1c45f2433a8cd16a7b9c1906508460991832cefc515342616",
+    "aws:asset:is-bundled": true,
+    "aws:asset:property": "Code"
+   }
+  },
+  "ContentGeneratorServiceRole151A72B7": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ContentGenerator/ServiceRole/Resource"
+   }
+  },
+  "ContentGeneratorServiceRoleDefaultPolicy56C733DA": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "TopicsTableB8A0263C",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "TopicsTableB8A0263C",
+             "Arn"
+            ]
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "ContentGeneratorServiceRoleDefaultPolicy56C733DA",
+    "Roles": [
+     {
+      "Ref": "ContentGeneratorServiceRole151A72B7"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ContentGenerator/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "ContentGenerator08D4D895": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
+     "S3Key": "8db75a2f4f8a2e7bbce08866ee850bd7b4db2359a9164343a5ed2059c4d4dfc3.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "TOPICS_TABLE": {
+       "Ref": "TopicsTableB8A0263C"
+      },
+      "S3_BUCKET": {
+       "Ref": "ImagesBucket1E86AFB2"
+      },
+      "CLOUDFRONT_DOMAIN": {
+       "Fn::GetAtt": [
+        "ImagesCdnBC2AA66B",
+        "DomainName"
+       ]
+      },
+      "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "NODE_OPTIONS": "--enable-source-maps"
+     }
+    },
+    "FunctionName": "ai-blog-content-generator",
+    "Handler": "index.handler",
+    "MemorySize": 512,
+    "Role": {
+     "Fn::GetAtt": [
+      "ContentGeneratorServiceRole151A72B7",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 600
+   },
+   "DependsOn": [
+    "ContentGeneratorServiceRoleDefaultPolicy56C733DA",
+    "ContentGeneratorServiceRole151A72B7"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/ContentGenerator/Resource",
+    "aws:asset:path": "asset.8db75a2f4f8a2e7bbce08866ee850bd7b4db2359a9164343a5ed2059c4d4dfc3",
+    "aws:asset:is-bundled": true,
+    "aws:asset:property": "Code"
+   }
+  },
+  "PublisherServiceRoleF4D9160F": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Publisher/ServiceRole/Resource"
+   }
+  },
+  "PublisherServiceRoleDefaultPolicy0E21E942": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+       ],
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": "s3:PutObject",
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::Join": [
+         "",
+         [
+          {
+           "Fn::GetAtt": [
+            "ImagesBucket1E86AFB2",
+            "Arn"
+           ]
+          },
+          "/*"
+         ]
+        ]
+       }
+      },
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "TopicsTableB8A0263C",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "TopicsTableB8A0263C",
+             "Arn"
+            ]
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "PublisherServiceRoleDefaultPolicy0E21E942",
+    "Roles": [
+     {
+      "Ref": "PublisherServiceRoleF4D9160F"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Publisher/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "PublisherF0355618": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
+     "S3Key": "bf09e41aa0f53635dc28a3e909f7d2224a5401b80bf2fa1bdd34fe6db003e97f.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "TOPICS_TABLE": {
+       "Ref": "TopicsTableB8A0263C"
+      },
+      "S3_BUCKET": {
+       "Ref": "ImagesBucket1E86AFB2"
+      },
+      "CLOUDFRONT_DOMAIN": {
+       "Fn::GetAtt": [
+        "ImagesCdnBC2AA66B",
+        "DomainName"
+       ]
+      },
+      "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "NODE_OPTIONS": "--enable-source-maps",
+      "NEXTJS_SITE_URL": "https://nonsubjugable-inconstantly-hanh.ngrok-free.dev",
+      "WEBHOOK_SECRET": "0b0e9d3811bca9071c1e2beedcae3f186e71eee59c64661bf1f043f90d94df9e"
+     }
+    },
+    "FunctionName": "ai-blog-publisher",
+    "Handler": "index.handler",
+    "MemorySize": 512,
+    "Role": {
+     "Fn::GetAtt": [
+      "PublisherServiceRoleF4D9160F",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "PublisherServiceRoleDefaultPolicy0E21E942",
+    "PublisherServiceRoleF4D9160F"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/Publisher/Resource",
+    "aws:asset:path": "asset.bf09e41aa0f53635dc28a3e909f7d2224a5401b80bf2fa1bdd34fe6db003e97f",
+    "aws:asset:is-bundled": true,
+    "aws:asset:property": "Code"
+   }
+  },
+  "BlogPipelineRoleFDC228E3": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "states.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogPipeline/Role/Resource"
+   }
+  },
+  "BlogPipelineRoleDefaultPolicy942BACA1": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "lambda:InvokeFunction",
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "ContentGenerator08D4D895",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::GetAtt": [
+          "PublisherF0355618",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "ContentGenerator08D4D895",
+             "Arn"
+            ]
+           },
+           ":*"
+          ]
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "PublisherF0355618",
+             "Arn"
+            ]
+           },
+           ":*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "BlogPipelineRoleDefaultPolicy942BACA1",
+    "Roles": [
+     {
+      "Ref": "BlogPipelineRoleFDC228E3"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogPipeline/Role/DefaultPolicy/Resource"
+   }
+  },
+  "BlogPipelineC080753B": {
+   "Type": "AWS::StepFunctions::StateMachine",
+   "Properties": {
+    "DefinitionString": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"StartAt\":\"GenerateContent\",\"States\":{\"GenerateContent\":{\"Next\":\"CheckQuality\",\"Retry\":[{\"ErrorEquals\":[\"Lambda.ClientExecutionTimeoutException\",\"Lambda.ServiceException\",\"Lambda.AWSLambdaException\",\"Lambda.SdkClientException\"],\"IntervalSeconds\":2,\"MaxAttempts\":6,\"BackoffRate\":2}],\"Catch\":[{\"ErrorEquals\":[\"States.ALL\"],\"ResultPath\":\"$.error\",\"Next\":\"PipelineFailed\"}],\"Type\":\"Task\",\"OutputPath\":\"$.Payload\",\"Resource\":\"arn:",
+       {
+        "Ref": "AWS::Partition"
+       },
+       ":states:::lambda:invoke\",\"Parameters\":{\"FunctionName\":\"",
+       {
+        "Fn::GetAtt": [
+         "ContentGenerator08D4D895",
+         "Arn"
+        ]
+       },
+       "\",\"Payload.$\":\"$\"}},\"WaitBeforeRetry\":{\"Type\":\"Wait\",\"Seconds\":15,\"Next\":\"GenerateContent\"},\"CheckQuality\":{\"Type\":\"Choice\",\"Choices\":[{\"Variable\":\"$.shouldRetry\",\"BooleanEquals\":true,\"Next\":\"WaitBeforeRetry\"}],\"Default\":\"PublishContent\"},\"PublishContent\":{\"Next\":\"PipelineSuccess\",\"Retry\":[{\"ErrorEquals\":[\"Lambda.ClientExecutionTimeoutException\",\"Lambda.ServiceException\",\"Lambda.AWSLambdaException\",\"Lambda.SdkClientException\"],\"IntervalSeconds\":2,\"MaxAttempts\":6,\"BackoffRate\":2}],\"Catch\":[{\"ErrorEquals\":[\"States.ALL\"],\"ResultPath\":\"$.error\",\"Next\":\"PipelineFailed\"}],\"Type\":\"Task\",\"OutputPath\":\"$.Payload\",\"Resource\":\"arn:",
+       {
+        "Ref": "AWS::Partition"
+       },
+       ":states:::lambda:invoke\",\"Parameters\":{\"FunctionName\":\"",
+       {
+        "Fn::GetAtt": [
+         "PublisherF0355618",
+         "Arn"
+        ]
+       },
+       "\",\"Payload.$\":\"$\"}},\"PipelineSuccess\":{\"Type\":\"Succeed\"},\"PipelineFailed\":{\"Type\":\"Fail\",\"Error\":\"PipelineFailed\",\"Cause\":\"Pipeline failed after all retries\"}},\"TimeoutSeconds\":1800}"
+      ]
+     ]
+    },
+    "RoleArn": {
+     "Fn::GetAtt": [
+      "BlogPipelineRoleFDC228E3",
+      "Arn"
+     ]
+    },
+    "StateMachineName": "ai-blog-pipeline"
+   },
+   "DependsOn": [
+    "BlogPipelineRoleDefaultPolicy942BACA1",
+    "BlogPipelineRoleFDC228E3"
+   ],
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/BlogPipeline/Resource"
+   }
+  },
+  "TopicPickerServiceRole33211B14": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicPicker/ServiceRole/Resource"
+   }
+  },
+  "TopicPickerServiceRoleDefaultPolicy401BC6A7": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "TopicsTableB8A0263C",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "TopicsTableB8A0263C",
+             "Arn"
+            ]
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      },
+      {
+       "Action": "states:StartExecution",
+       "Effect": "Allow",
+       "Resource": {
+        "Ref": "BlogPipelineC080753B"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TopicPickerServiceRoleDefaultPolicy401BC6A7",
+    "Roles": [
+     {
+      "Ref": "TopicPickerServiceRole33211B14"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicPicker/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "TopicPickerAEFC9C2D": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
+     "S3Key": "42861745ec2a953a6a197e3cea92998aeabeac977113f6aa7e98f84ffd13fdd3.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "TOPICS_TABLE": {
+       "Ref": "TopicsTableB8A0263C"
+      },
+      "S3_BUCKET": {
+       "Ref": "ImagesBucket1E86AFB2"
+      },
+      "CLOUDFRONT_DOMAIN": {
+       "Fn::GetAtt": [
+        "ImagesCdnBC2AA66B",
+        "DomainName"
+       ]
+      },
+      "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "NODE_OPTIONS": "--enable-source-maps",
+      "STATE_MACHINE_ARN": {
+       "Ref": "BlogPipelineC080753B"
+      }
+     }
+    },
+    "FunctionName": "ai-blog-topic-picker",
+    "Handler": "index.handler",
+    "Role": {
+     "Fn::GetAtt": [
+      "TopicPickerServiceRole33211B14",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "TopicPickerServiceRoleDefaultPolicy401BC6A7",
+    "TopicPickerServiceRole33211B14"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TopicPicker/Resource",
+    "aws:asset:path": "asset.42861745ec2a953a6a197e3cea92998aeabeac977113f6aa7e98f84ffd13fdd3",
+    "aws:asset:is-bundled": true,
+    "aws:asset:property": "Code"
+   }
+  },
+  "PipelineSchedule3887CED6": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Name": "ai-blog-daily-schedule",
+    "ScheduleExpression": "cron(0 7,13,19 * * ? *)",
+    "State": "ENABLED",
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "TopicPickerAEFC9C2D",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/PipelineSchedule/Resource"
+   }
+  },
+  "PipelineScheduleAllowEventRuleAiBlogStackTopicPicker78F6E7CA494B4208": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "TopicPickerAEFC9C2D",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "PipelineSchedule3887CED6",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/PipelineSchedule/AllowEventRuleAiBlogStackTopicPicker78F6E7CA"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VTy27bMBD8lt5ptrBboFc/kMBAkxpykB6NFbV2aEmkwSUdGIL+vUtSkZUCPe1yNLOPITWX8+8L+e0LvNNMVfWs0aXs9h5ULRg6dNXNQGsrBl+gbFCsjyYlvUA1l93rRUXodbcWu1A2Wu1DadBH7J4VNngc5Rm/Y0siqzR4bc1IjsnWeHTMfASP73Ab2gynpecR31o0XuxRBaf97dHZcEkNpkAvXEWy24CHEgi3hjwYhSJPMWo2qynwweZKLq+wWX0oe0EJpRYMnNDJLreMxBxewJ3QTyYcCf9+4VoL2a2CqnOXIcthZ9nO2x0ezvmw4ul6oRobqqOzxvOGmrzTZUg+7he/nT5ps1QKidZMcLaJpf4DT8W9aKAtKzgYW+GZ5HMKD8GoVFpDK7vC5rtM8T5ozuJWByBij+QyhqFgcmqsE+noWk2UepLHy3H4RgcPVJP8lWRbc7U1fibI7g9o9jvwIliJB9C8xpvV8WI9v5AnNlib/NwmZ360V7ad5UUYFuDY96JAssGxOs3LEjbplPwK/hL4nqIX8kxfr/Mf8if/LmfSeuaC8bpFWeT4FzTACJhLAwAA"
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "ImagesCdnUrl": {
+   "Description": "Add this as CLOUDFRONT_DOMAIN in your .env",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "https://",
+      {
+       "Fn::GetAtt": [
+        "ImagesCdnBC2AA66B",
+        "DomainName"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "TopicsTableName": {
+   "Value": {
+    "Ref": "TopicsTableB8A0263C"
+   }
+  },
+  "StateMachineArn": {
+   "Value": {
+    "Ref": "BlogPipelineC080753B"
+   }
+  },
+  "ImagesBucketName": {
+   "Value": {
+    "Ref": "ImagesBucket1E86AFB2"
+   }
+  },
+  "DbEndpoint": {
+   "Description": "RDS PostgreSQL endpoint",
+   "Value": {
+    "Fn::GetAtt": [
+     "DatabaseB269D8BB",
+     "Endpoint.Address"
+    ]
+   }
+  },
+  "DbSecretArn": {
+   "Description": "Secrets Manager ARN — used by aws:setup to build DATABASE_URL",
+   "Value": {
+    "Ref": "DatabaseSecretAttachmentE5D1B020"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

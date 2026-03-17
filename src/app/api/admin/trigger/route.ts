@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn'
 import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb'
 
-const sfn = new SFNClient({ region: process.env.AWS_REGION })
-const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION })
+const credentials = {
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+}
+
+const sfn = new SFNClient({ region: process.env.AWS_REGION, credentials })
+const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION, credentials })
 
 export async function POST(req: NextRequest) {
   const apiKey = req.headers.get('x-admin-key')

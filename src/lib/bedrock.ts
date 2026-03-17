@@ -5,6 +5,10 @@ import {
 
 const client = new BedrockRuntimeClient({
   region: process.env.AWS_REGION!,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
 })
 
 export interface ArticleInput {
@@ -32,7 +36,7 @@ export async function generateArticle(
   const prompt = buildArticlePrompt(input)
 
   const command = new InvokeModelCommand({
-    modelId: process.env.AWS_BEDROCK_MODEL_ID ?? 'anthropic.claude-sonnet-4-5',
+    modelId: process.env.AWS_BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
     contentType: 'application/json',
     accept: 'application/json',
     body: JSON.stringify({
