@@ -1,0 +1,22 @@
+{
+  "name": "ai-blog-infra",
+  "version": "1.0.0",
+  "private": true,
+  "bin": { "infra": "bin/app.js" },
+  "scripts": {
+    "build": "tsc",
+    "deploy": "cdk deploy --require-approval never",
+    "destroy": "cdk destroy",
+    "diff": "cdk diff",
+    "synth": "cdk synth"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.140.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.140.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.5"
+  }
+}

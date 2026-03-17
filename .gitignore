@@ -1,0 +1,8 @@
+.env.local
+.env
+node_modules
+.next
+dist
+*.zip
+.DS_Store
+prisma/migrations
