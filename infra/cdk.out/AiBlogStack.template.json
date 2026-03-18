@@ -16,6 +16,10 @@
      {
       "AttributeName": "priority",
       "AttributeType": "N"
+     },
+     {
+      "AttributeName": "keyword",
+      "AttributeType": "S"
      }
     ],
     "BillingMode": "PAY_PER_REQUEST",
@@ -30,6 +34,18 @@
        {
         "AttributeName": "priority",
         "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     },
+     {
+      "IndexName": "keyword-index",
+      "KeySchema": [
+       {
+        "AttributeName": "keyword",
+        "KeyType": "HASH"
        }
       ],
       "Projection": {
@@ -514,6 +530,183 @@
     "aws:cdk:path": "AiBlogStack/ImagesCdn/Resource"
    }
   },
+  "TrendFetcherServiceRoleEB6DE6A3": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TrendFetcher/ServiceRole/Resource"
+   }
+  },
+  "TrendFetcherServiceRoleDefaultPolicy58016387": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchWriteItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "TopicsTableB8A0263C",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "TopicsTableB8A0263C",
+             "Arn"
+            ]
+           },
+           "/index/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "TrendFetcherServiceRoleDefaultPolicy58016387",
+    "Roles": [
+     {
+      "Ref": "TrendFetcherServiceRoleEB6DE6A3"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TrendFetcher/ServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "TrendFetcher63B04CC4": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
+     "S3Key": "ac19e366666e75b8cb1f98611342cbfa801768f88c5f553037bd1f295a3bdda0.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "TOPICS_TABLE": {
+       "Ref": "TopicsTableB8A0263C"
+      },
+      "S3_BUCKET": {
+       "Ref": "ImagesBucket1E86AFB2"
+      },
+      "CLOUDFRONT_DOMAIN": {
+       "Fn::GetAtt": [
+        "ImagesCdnBC2AA66B",
+        "DomainName"
+       ]
+      },
+      "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "NODE_OPTIONS": "--enable-source-maps"
+     }
+    },
+    "FunctionName": "ai-blog-trend-fetcher",
+    "Handler": "index.handler",
+    "MemorySize": 256,
+    "Role": {
+     "Fn::GetAtt": [
+      "TrendFetcherServiceRoleEB6DE6A3",
+      "Arn"
+     ]
+    },
+    "Runtime": "nodejs20.x",
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "TrendFetcherServiceRoleDefaultPolicy58016387",
+    "TrendFetcherServiceRoleEB6DE6A3"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TrendFetcher/Resource",
+    "aws:asset:path": "asset.ac19e366666e75b8cb1f98611342cbfa801768f88c5f553037bd1f295a3bdda0",
+    "aws:asset:is-bundled": true,
+    "aws:asset:property": "Code"
+   }
+  },
+  "TrendFetcherSchedule85688D2F": {
+   "Type": "AWS::Events::Rule",
+   "Properties": {
+    "Name": "ai-blog-trend-fetcher-schedule",
+    "ScheduleExpression": "cron(0 6 * * ? *)",
+    "State": "ENABLED",
+    "Targets": [
+     {
+      "Arn": {
+       "Fn::GetAtt": [
+        "TrendFetcher63B04CC4",
+        "Arn"
+       ]
+      },
+      "Id": "Target0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TrendFetcherSchedule/Resource"
+   }
+  },
+  "TrendFetcherScheduleAllowEventRuleAiBlogStackTrendFetcherEC4F7EED0774EDF7": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "TrendFetcher63B04CC4",
+      "Arn"
+     ]
+    },
+    "Principal": "events.amazonaws.com",
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "TrendFetcherSchedule85688D2F",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "AiBlogStack/TrendFetcherSchedule/AllowEventRuleAiBlogStackTrendFetcherEC4F7EED"
+   }
+  },
   "TopicSeederServiceRoleC529EDDD": {
    "Type": "AWS::IAM::Role",
    "Properties": {
@@ -751,7 +944,7 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
-     "S3Key": "8db75a2f4f8a2e7bbce08866ee850bd7b4db2359a9164343a5ed2059c4d4dfc3.zip"
+     "S3Key": "ec1a61185932598252832440b1bfd01fa9587c90a63fb07505d23d39434c26c2.zip"
     },
     "Environment": {
      "Variables": {
@@ -789,7 +982,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "AiBlogStack/ContentGenerator/Resource",
-    "aws:asset:path": "asset.8db75a2f4f8a2e7bbce08866ee850bd7b4db2359a9164343a5ed2059c4d4dfc3",
+    "aws:asset:path": "asset.ec1a61185932598252832440b1bfd01fa9587c90a63fb07505d23d39434c26c2",
     "aws:asset:is-bundled": true,
     "aws:asset:property": "Code"
    }
@@ -917,7 +1110,7 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
-     "S3Key": "bf09e41aa0f53635dc28a3e909f7d2224a5401b80bf2fa1bdd34fe6db003e97f.zip"
+     "S3Key": "15f6b88c3b5ef02a9363295fb1bfa54a6cf73cb0ef3f5c99b8fc72b403f5d5c2.zip"
     },
     "Environment": {
      "Variables": {
@@ -935,8 +1128,8 @@
       },
       "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
       "NODE_OPTIONS": "--enable-source-maps",
-      "NEXTJS_SITE_URL": "https://nonsubjugable-inconstantly-hanh.ngrok-free.dev",
-      "WEBHOOK_SECRET": "0b0e9d3811bca9071c1e2beedcae3f186e71eee59c64661bf1f043f90d94df9e"
+      "NEXTJS_SITE_URL": "",
+      "WEBHOOK_SECRET": ""
      }
     },
     "FunctionName": "ai-blog-publisher",
@@ -957,7 +1150,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "AiBlogStack/Publisher/Resource",
-    "aws:asset:path": "asset.bf09e41aa0f53635dc28a3e909f7d2224a5401b80bf2fa1bdd34fe6db003e97f",
+    "aws:asset:path": "asset.15f6b88c3b5ef02a9363295fb1bfa54a6cf73cb0ef3f5c99b8fc72b403f5d5c2",
     "aws:asset:is-bundled": true,
     "aws:asset:property": "Code"
    }
@@ -1202,7 +1395,7 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-670294435884-us-east-1",
-     "S3Key": "42861745ec2a953a6a197e3cea92998aeabeac977113f6aa7e98f84ffd13fdd3.zip"
+     "S3Key": "9090cc32c30f35f922c73045b2d569974bb13cb1a275916ca2c4c6ec4d57316a.zip"
     },
     "Environment": {
      "Variables": {
@@ -1242,7 +1435,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "AiBlogStack/TopicPicker/Resource",
-    "aws:asset:path": "asset.42861745ec2a953a6a197e3cea92998aeabeac977113f6aa7e98f84ffd13fdd3",
+    "aws:asset:path": "asset.9090cc32c30f35f922c73045b2d569974bb13cb1a275916ca2c4c6ec4d57316a",
     "aws:asset:is-bundled": true,
     "aws:asset:property": "Code"
    }
@@ -1294,7 +1487,7 @@
   "CDKMetadata": {
    "Type": "AWS::CDK::Metadata",
    "Properties": {
-    "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VTy27bMBD8lt5ptrBboFc/kMBAkxpykB6NFbV2aEmkwSUdGIL+vUtSkZUCPe1yNLOPITWX8+8L+e0LvNNMVfWs0aXs9h5ULRg6dNXNQGsrBl+gbFCsjyYlvUA1l93rRUXodbcWu1A2Wu1DadBH7J4VNngc5Rm/Y0siqzR4bc1IjsnWeHTMfASP73Ab2gynpecR31o0XuxRBaf97dHZcEkNpkAvXEWy24CHEgi3hjwYhSJPMWo2qynwweZKLq+wWX0oe0EJpRYMnNDJLreMxBxewJ3QTyYcCf9+4VoL2a2CqnOXIcthZ9nO2x0ezvmw4ul6oRobqqOzxvOGmrzTZUg+7he/nT5ps1QKidZMcLaJpf4DT8W9aKAtKzgYW+GZ5HMKD8GoVFpDK7vC5rtM8T5ozuJWByBij+QyhqFgcmqsE+noWk2UepLHy3H4RgcPVJP8lWRbc7U1fibI7g9o9jvwIliJB9C8xpvV8WI9v5AnNlib/NwmZ360V7ad5UUYFuDY96JAssGxOs3LEjbplPwK/hL4nqIX8kxfr/Mf8if/LmfSeuaC8bpFWeT4FzTACJhLAwAA"
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/3VT227bMAz9lr0r2pBswF5zQYsAaxc4RfcY0DKTKralQJRSBIb/fZTkOu6APZE8PrwdynM5/76Q377AO81UVc8aXcpu70HVgqFDV90MtLZi8AXKBsX6aJLTC1Rz2b1eVIRed2uxC2Wj1T6UBn3E7l5hg8cxPeN3bElklQavrRnJ0dkaj46Zj+DxHW5DmyFaeh7xrUXjxR5VcNrfHp0Nl9RgCvTCVSS7DXgogXBryINRKPIUY85mNQU+2FzJ5RU2q4/MXlBCqQUDJ3Syyy0jMZsXcCf0kwlHwr9fuNZCdqug6txl8LLZWZbzdoeHOAcrnq4XqrGhOjprPG+oyTtdhqTjfvHb6ZM2S6WQaM0EZ5tY6j/wNLkXDbRlBQdjKzyTfE7mIRiVSmtoZVfYfMtk74NmL251ACLWSC6jGQompcY6kY6u1USpJ15ZDz5UEYbKIb4x8ng5Dhl08EA1yV+p2NZcbY2fCbL7A5qvEHg9rMQDaF7uzep4bs/v5oll1yY/wknc96JAssExL83LH1mkU9Ir+EvgO0Ut5Jm+Xuc/5E/+Xc6k9cwF43WLssj2L5sw+YtLAwAA"
    },
    "Metadata": {
     "aws:cdk:path": "AiBlogStack/CDKMetadata/Default"

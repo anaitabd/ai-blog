@@ -7,7 +7,7 @@ import { z } from 'zod'
 const PublishSchema = z.object({
   secret: z.string(),
   title: z.string().min(10),
-  slug: z.string().min(3),
+  slug: z.string().min(3).optional(),
   excerpt: z.string().min(50),
   content: z.string().min(500),
   metaTitle: z.string().min(10).max(70),
@@ -17,6 +17,24 @@ const PublishSchema = z.object({
   featuredImage: z.string().url().optional(),
   schemaJson: z.string().optional(),
 })
+
+function titleToSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replaceAll(/\s+/g, '-')
+    .slice(0, 80)
+}
+
+async function uniqueSlug(base: string): Promise<string> {
+  let candidate = base
+  let suffix = 2
+  while (await prisma.post.findUnique({ where: { slug: candidate } })) {
+    candidate = `${base}-${suffix++}`
+  }
+  return candidate
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,7 +48,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { secret, categoryName, tags, ...data } = parsed.data
+    const { secret, categoryName, tags, slug: rawSlug, ...data } = parsed.data
 
     if (secret !== process.env.WEBHOOK_SECRET) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -44,7 +62,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const categorySlug = categoryName.toLowerCase().replace(/\s+/g, '-')
+    // Generate + deduplicate slug
+    const slugBase = rawSlug ?? titleToSlug(data.title)
+    const slug     = await uniqueSlug(slugBase)
+
+    const categorySlug = categoryName.toLowerCase().replaceAll(/\s+/g, '-')
     const category = await prisma.category.upsert({
       where: { slug: categorySlug },
       update: {},
@@ -53,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     const tagRecords = await Promise.all(
       tags.map((tag) => {
-        const tagSlug = tag.toLowerCase().replace(/\s+/g, '-')
+        const tagSlug = tag.toLowerCase().replaceAll(/\s+/g, '-')
         return prisma.tag.upsert({
           where: { slug: tagSlug },
           update: {},
@@ -62,21 +84,26 @@ export async function POST(req: NextRequest) {
       })
     )
 
+    const wordCount   = quality.wordCount
+    const readingTime = calcReadingTime(wordCount)
+
     const post = await prisma.post.create({
       data: {
         ...data,
+        slug,
         categoryId: category.id,
         tags: { connect: tagRecords.map((t) => ({ id: t.id })) },
-        wordCount: quality.wordCount,
-        readingTime: calcReadingTime(quality.wordCount),
+        wordCount,
+        readingTime,
         status: 'REVIEW',
       },
+      include: { category: true, tags: true },
     })
 
     revalidatePath('/')
     revalidatePath('/sitemap.xml')
 
-    return NextResponse.json({ success: true, postId: post.id })
+    return NextResponse.json({ success: true, postId: post.id, slug: post.slug, post })
   } catch (err) {
     console.error('Publish webhook error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

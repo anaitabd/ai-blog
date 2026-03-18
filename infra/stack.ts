@@ -33,6 +33,11 @@ export class AiBlogStack extends cdk.Stack {
       sortKey: { name: 'priority', type: dynamodb.AttributeType.NUMBER },
     })
 
+    topicsTable.addGlobalSecondaryIndex({
+      indexName: 'keyword-index',
+      partitionKey: { name: 'keyword', type: dynamodb.AttributeType.STRING },
+    })
+
     // ─── VPC for RDS ─────────────────────────────────────────
     const vpc = new ec2.Vpc(this, 'BlogVpc', {
       maxAzs: 2,
@@ -95,6 +100,24 @@ export class AiBlogStack extends cdk.Stack {
       BEDROCK_MODEL_ID: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
       NODE_OPTIONS: '--enable-source-maps',
     }
+
+    // ─── Lambda: Trend Fetcher ──────────────────────────────
+    const trendFetcherFn = new NodejsFunction(this, 'TrendFetcher', {
+      functionName: 'ai-blog-trend-fetcher',
+      entry: path.join(lambdaDir, 'trend-fetcher', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 256,
+      environment: sharedEnv,
+    })
+    topicsTable.grantWriteData(trendFetcherFn)
+
+    // ─── EventBridge: 6am UTC daily trend fetch ─────────────
+    new events.Rule(this, 'TrendFetcherSchedule', {
+      ruleName: 'ai-blog-trend-fetcher-schedule',
+      schedule: events.Schedule.cron({ minute: '0', hour: '6' }),
+      targets: [new targets.LambdaFunction(trendFetcherFn)],
+    })
 
     // ─── Lambda: Topic Seeder ───────────────────────────────
     const seederFn = new NodejsFunction(this, 'TopicSeeder', {

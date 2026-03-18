@@ -23,6 +23,9 @@ model Post {
   schemaJson    String?    @db.Text
   wordCount     Int        @default(0)
   readingTime   Int        @default(0)
+  viewCount     Int        @default(0)
+  featured      Boolean    @default(false)
+  seoScore      Int?
   publishedAt   DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -47,14 +50,27 @@ model Tag {
 }
 
 model TopicQueue {
-  id          String      @id @default(cuid())
-  keyword     String
-  category    String
-  priority    Int         @default(0)
-  status      QueueStatus @default(PENDING)
-  failReason  String?
-  createdAt   DateTime    @default(now())
-  processedAt DateTime?
+  id              String      @id @default(cuid())
+  keyword         String
+  category        String
+  priority        Int         @default(0)
+  status          QueueStatus @default(PENDING)
+  source          String?     @default("manual")
+  originalQuery   String?
+  estimatedCPC    String?
+  monthlySearches String?
+  failReason      String?
+  createdAt       DateTime    @default(now())
+  processedAt     DateTime?
+}
+
+model Subscriber {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  active    Boolean  @default(true)
+  source    String   @default("website")
+  createdAt DateTime @default(now())
 }
 
 enum PostStatus {

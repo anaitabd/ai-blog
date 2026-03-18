@@ -1,15 +1,23 @@
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
-  content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
+  content: ['./src/**/*.{ts,tsx}'],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        serif: ['"Playfair Display"', 'Georgia', 'serif'],
+        sans:  ['"DM Sans"', 'system-ui', 'sans-serif'],
+      },
+      colors: {
+        navy:   { DEFAULT: '#0B1628', 2: '#162035' },
+        gold:   { DEFAULT: '#C9A84C', 2: '#E8C96A' },
+        cream:  { DEFAULT: '#FAF8F3', 2: '#F2EDE4' },
+        muted:  '#6B7280',
+        border: '#E5E0D8',
+      },
+    },
   },
-  plugins: [],
+  plugins: [require('@tailwindcss/typography')],
 }
 
 export default config

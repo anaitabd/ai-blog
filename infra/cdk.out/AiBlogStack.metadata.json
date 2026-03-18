@@ -97,6 +97,24 @@
       "data": "ImagesCdnBC2AA66B"
     }
   ],
+  "/AiBlogStack/TrendFetcher/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TrendFetcher63B04CC4"
+    }
+  ],
+  "/AiBlogStack/TrendFetcherSchedule/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TrendFetcherSchedule85688D2F"
+    }
+  ],
+  "/AiBlogStack/TrendFetcherSchedule/AllowEventRuleAiBlogStackTrendFetcherEC4F7EED": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TrendFetcherScheduleAllowEventRuleAiBlogStackTrendFetcherEC4F7EED0774EDF7"
+    }
+  ],
   "/AiBlogStack/TopicSeeder/Resource": [
     {
       "type": "aws:cdk:logicalId",
@@ -217,6 +235,12 @@
       "data": "ImagesBucketPolicy5ED12B6C"
     }
   ],
+  "/AiBlogStack/TrendFetcher/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TrendFetcherServiceRoleEB6DE6A3"
+    }
+  ],
   "/AiBlogStack/TopicSeeder/ServiceRole/Resource": [
     {
       "type": "aws:cdk:logicalId",
@@ -257,6 +281,12 @@
     {
       "type": "aws:cdk:logicalId",
       "data": "ImagesCdnOrigin1S3OriginAccessControl216FD174"
+    }
+  ],
+  "/AiBlogStack/TrendFetcher/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TrendFetcherServiceRoleDefaultPolicy58016387"
     }
   ],
   "/AiBlogStack/TopicSeeder/ServiceRole/DefaultPolicy/Resource": [
