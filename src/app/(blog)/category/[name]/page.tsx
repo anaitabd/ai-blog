@@ -9,6 +9,8 @@ interface Props {
 }
 
 export const revalidate = 3600
+// Allow slugs not pre-rendered at build time to be generated on first request.
+export const dynamicParams = true
 
 export async function generateStaticParams() {
   const categories = await prisma.category.findMany({ select: { slug: true } })

@@ -21,21 +21,12 @@ export default function TickerBar() {
   const [items, setItems] = useState<TickerItem[]>(FALLBACK)
 
   useEffect(() => {
-    // Attempt to fetch treasury average interest rate as a real data point
-    fetch(
-      'https://api.fiscaldata.treasury.gov/services/api/v1/accounting/od/avg_interest_rates?fields=record_date,avg_interest_rate_amt&filter=security_desc:eq:Treasury%20Bonds&sort=-record_date&page[size]=1'
-    )
+    // Fetch via our server-side proxy to avoid CORS issues with the Treasury API.
+    fetch('/api/ticker')
       .then((r) => r.json())
-      .then((data) => {
-        const rate = data?.data?.[0]?.avg_interest_rate_amt
-        if (rate) {
-          setItems((prev) =>
-            prev.map((item) =>
-              item.label === '10Y Treasury'
-                ? { ...item, value: `${parseFloat(rate).toFixed(2)}%` }
-                : item
-            )
-          )
+      .then((data: TickerItem[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setItems(data)
         }
       })
       .catch(() => {/* silently use fallback */})

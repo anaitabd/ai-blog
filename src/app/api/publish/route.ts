@@ -66,7 +66,13 @@ export async function POST(req: NextRequest) {
     const slugBase = rawSlug ?? titleToSlug(data.title)
     const slug     = await uniqueSlug(slugBase)
 
-    const categorySlug = categoryName.toLowerCase().replaceAll(/\s+/g, '-')
+    const categorySlug = categoryName
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9\s-]/g, '') // strip special chars (parens, etc.)
+      .trim()
+      .replaceAll(/\s+/g, '-')         // spaces → hyphens
+      .replaceAll(/-{2,}/g, '-')       // collapse consecutive hyphens
+      .replace(/^-+|-+$/g, '')         // trim leading / trailing hyphens
     const category = await prisma.category.upsert({
       where: { slug: categorySlug },
       update: {},
@@ -102,6 +108,8 @@ export async function POST(req: NextRequest) {
 
     revalidatePath('/')
     revalidatePath('/sitemap.xml')
+    revalidatePath(`/category/${category.slug}`)
+    revalidatePath(`/${post.slug}`)
 
     return NextResponse.json({ success: true, postId: post.id, slug: post.slug, post })
   } catch (err) {
