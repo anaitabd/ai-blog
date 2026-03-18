@@ -23,12 +23,16 @@ model Post {
   schemaJson    String?    @db.Text
   wordCount     Int        @default(0)
   readingTime   Int        @default(0)
-  viewCount     Int        @default(0)
-  featured      Boolean    @default(false)
-  seoScore      Int?
-  publishedAt   DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  viewCount          Int        @default(0)
+  featured           Boolean    @default(false)
+  seoScore           Int?
+  pinterestPinId     String?
+  pinterestPinUrl    String?
+  pinterestImage     String?
+  pinterestPinnedAt  DateTime?
+  publishedAt        DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   @@index([slug])
   @@index([status, publishedAt])
