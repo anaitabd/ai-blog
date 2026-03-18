@@ -23,7 +23,7 @@ export default async function PostsPage({
     prisma.post.findMany({
       where: { status },
       orderBy: { createdAt: 'desc' },
-      include: { Category: true },
+      include: { category: true },
     }),
     Promise.all(
       (['REVIEW', 'PUBLISHED', 'REJECTED', 'DRAFT'] as PostStatus[]).map((s) =>
@@ -102,7 +102,7 @@ export default async function PostsPage({
                   <p className="font-medium text-sm text-[#1A1A2E] truncate">{post.title}</p>
                   <p className="text-xs text-muted mt-0.5 truncate">{post.excerpt}</p>
                 </div>
-                <span className="md:col-span-2 text-xs text-muted">{post.Category.name}</span>
+                <span className="md:col-span-2 text-xs text-muted">{post.category.name}</span>
                 <span className="md:col-span-1 text-xs text-muted text-right">{post.wordCount.toLocaleString()}</span>
                 <span className="md:col-span-2 text-xs text-muted">
                   {new Date(post.createdAt).toLocaleDateString()}

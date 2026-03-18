@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { generateSlug } from '@/lib/quality-gate'
-import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn'
-
-const sfn = new SFNClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 
 export async function PATCH(
   req: NextRequest,
@@ -22,10 +19,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
-  const current = await prisma.post.findUnique({
-    where: { id: params.id },
-    select: { slug: true, pinterestPinId: true },
-  })
+  const current = await prisma.post.findUnique({ where: { id: params.id }, select: { slug: true } })
   if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,34 +55,7 @@ export async function PATCH(
     data.slug = cleanSlug
   }
 
-  const post = await prisma.post.update({
-    where: { id: params.id },
-    data,
-    include: { Category: true, Tag: true },
-  })
-
-  // ── Trigger Pinterest pipeline on first approval ──────────
-  if (status === 'PUBLISHED' && !current.pinterestPinId && process.env.PINTEREST_STATE_MACHINE_ARN) {
-    try {
-      await sfn.send(new StartExecutionCommand({
-        stateMachineArn: process.env.PINTEREST_STATE_MACHINE_ARN,
-        name: `pinterest-${params.id}-${Date.now()}`,
-        input: JSON.stringify({
-          postId: post.id,
-          slug: post.slug,
-          title: post.title,
-          excerpt: post.excerpt,
-          keyword: post.metaTitle,
-          category: post.Category.name,
-          tags: post.Tag.map((t: { name: string }) => t.name),
-        }),
-      }))
-      console.log(`Pinterest pipeline started for post ${post.id}`)
-    } catch (err) {
-      // Non-blocking — Pinterest failure should not break approval
-      console.error('Pinterest pipeline start failed (non-blocking):', err)
-    }
-  }
+  const post = await prisma.post.update({ where: { id: params.id }, data })
 
   revalidatePath('/')
   revalidatePath(`/${current.slug}`)

@@ -21,16 +21,16 @@ export default async function HomePage({ searchParams }: Props) {
     prisma.post.findMany({
       where: {
         status: 'PUBLISHED',
-        ...(categoryFilter ? { Category: { slug: categoryFilter } } : {}),
+        ...(categoryFilter ? { category: { slug: categoryFilter } } : {}),
       },
       orderBy: { publishedAt: 'desc' },
       take: 12,
-      include: { Category: true, Tag: true },
+      include: { category: true, tags: true },
     }),
     prisma.post.findFirst({
       where: { status: 'PUBLISHED' },
       orderBy: { publishedAt: 'desc' },
-      include: { Category: true },
+      include: { category: true },
     }),
   ])
 
@@ -51,7 +51,7 @@ export default async function HomePage({ searchParams }: Props) {
             {/* Left */}
             <div className="animate-fade-up">
               <span className="inline-block bg-gold/20 text-gold text-xs font-semibold uppercase tracking-widest px-3 py-1 rounded-full mb-4">
-                Featured · {featuredPost.Category.name}
+                Featured · {featuredPost.category.name}
               </span>
               <h1 className="font-serif text-3xl md:text-4xl font-bold text-white leading-tight mb-4">
                 {featuredPost.title}

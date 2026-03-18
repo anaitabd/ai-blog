@@ -10,7 +10,6 @@ import NewsletterInline from '@/components/NewsletterInline'
 import TrendingWidget from '@/components/TrendingWidget'
 import CompoundCalculator from '@/components/CompoundCalculator'
 import ArticleCard from '@/components/ArticleCard'
-import PinterestSaveButton from '@/components/PinterestSaveButton'
 
 interface Props {
   params: { slug: string }
@@ -29,48 +28,21 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const post = await prisma.post.findUnique({
     where: { slug: params.slug, status: 'PUBLISHED' },
-    include: { Category: true },
   })
   if (!post) return {}
-
-  const url = `${process.env.NEXT_PUBLIC_SITE_URL}/${post.slug}`
 
   return {
     title: post.metaTitle,
     description: post.metaDesc,
     alternates: {
-      canonical: url,
+      canonical: `${process.env.NEXT_PUBLIC_SITE_URL}/${post.slug}`,
     },
     openGraph: {
       title: post.metaTitle,
       description: post.metaDesc,
-      url,
       type: 'article',
-      siteName: 'WealthBeginners',
       publishedTime: post.publishedAt?.toISOString(),
-      images: [
-        // Pinterest vertical image first (2:3 ratio — Pinterest prefers this)
-        ...(post.pinterestImage ? [{
-          url: post.pinterestImage,
-          width: 1000,
-          height: 1500,
-          alt: post.title,
-        }] : []),
-        // Standard featured image second
-        ...(post.featuredImage ? [{
-          url: post.featuredImage,
-          width: 1792,
-          height: 1024,
-          alt: post.title,
-        }] : []),
-      ],
-    },
-    // Pinterest Rich Pins require these specific meta tags
-    other: {
-      'pinterest:description': post.metaDesc,
-      'pinterest:media': post.pinterestImage ?? post.featuredImage ?? '',
-      // Tells Pinterest this is an article (enables Rich Pin article type)
-      'og:type': 'article',
+      images: post.featuredImage ? [post.featuredImage] : [],
     },
   }
 }
@@ -78,7 +50,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ArticlePage({ params }: Props) {
   const post = await prisma.post.findUnique({
     where: { slug: params.slug, status: 'PUBLISHED' },
-    include: { Category: true, Tag: true },
+    include: { category: true, tags: true },
   })
 
   if (!post) notFound()
@@ -97,7 +69,7 @@ export default async function ArticlePage({ params }: Props) {
     },
     take: 3,
     orderBy: { publishedAt: 'desc' },
-    include: { Category: true },
+    include: { category: true },
   })
 
   const wordCount = post.wordCount || post.content.trim().split(/\s+/).length
@@ -119,8 +91,8 @@ export default async function ArticlePage({ params }: Props) {
           <nav className="flex items-center gap-2 text-xs text-muted mb-6">
             <Link href="/" className="hover:text-gold transition-colors">Home</Link>
             <span>/</span>
-            <Link href={`/category/${post.Category.slug}`} className="hover:text-gold transition-colors">
-              {post.Category.name}
+            <Link href={`/category/${post.category.slug}`} className="hover:text-gold transition-colors">
+              {post.category.name}
             </Link>
             <span>/</span>
             <span className="truncate max-w-[160px]">{post.title}</span>
@@ -130,10 +102,10 @@ export default async function ArticlePage({ params }: Props) {
           <header className="mb-8">
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <Link
-                href={`/category/${post.Category.slug}`}
+                href={`/category/${post.category.slug}`}
                 className="bg-gold/10 text-gold text-xs font-semibold px-3 py-1 rounded-full hover:bg-gold/20 transition-colors"
               >
-                {post.Category.name}
+                {post.category.name}
               </Link>
               <span className="text-muted text-xs">·</span>
               <span className="text-muted text-xs">{post.readingTime} min read</span>
@@ -184,9 +156,9 @@ export default async function ArticlePage({ params }: Props) {
           <ArticleBody content={post.content} />
 
           {/* Tags */}
-          {post.Tag.length > 0 && (
+          {post.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-border">
-              {post.Tag.map((tag) => (
+              {post.tags.map((tag) => (
                 <span
                   key={tag.id}
                   className="bg-cream-2 text-muted text-xs px-3 py-1.5 rounded-full border border-border"
@@ -194,18 +166,6 @@ export default async function ArticlePage({ params }: Props) {
                   {tag.name}
                 </span>
               ))}
-            </div>
-          )}
-
-          {/* Pinterest Save Button */}
-          {(post.pinterestImage || post.featuredImage) && (
-            <div className="flex items-center gap-3 py-4 border-t border-border mt-8">
-              <span className="text-sm text-muted">Share this article:</span>
-              <PinterestSaveButton
-                imageUrl={post.pinterestImage ?? post.featuredImage ?? ''}
-                description={`${post.excerpt} — Read more at WealthBeginners.com #personalfinance #moneytips #wealthbeginners`}
-                url={`${process.env.NEXT_PUBLIC_SITE_URL}/${post.slug}`}
-              />
             </div>
           )}
 

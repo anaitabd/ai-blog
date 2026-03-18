@@ -36,7 +36,7 @@ export default async function CategoryPage({ params }: Readonly<Props>) {
   const posts = await prisma.post.findMany({
     where: { status: 'PUBLISHED', categoryId: category.id },
     orderBy: { publishedAt: 'desc' },
-    include: { Category: true, Tag: true },
+    include: { category: true, tags: true },
   })
 
   return (

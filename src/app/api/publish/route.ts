@@ -92,12 +92,12 @@ export async function POST(req: NextRequest) {
         ...data,
         slug,
         categoryId: category.id,
-        Tag: { connect: tagRecords.map((t) => ({ id: t.id })) },
+        tags: { connect: tagRecords.map((t) => ({ id: t.id })) },
         wordCount,
         readingTime,
         status: 'REVIEW',
       },
-      include: { Category: true, Tag: true },
+      include: { category: true, tags: true },
     })
 
     revalidatePath('/')

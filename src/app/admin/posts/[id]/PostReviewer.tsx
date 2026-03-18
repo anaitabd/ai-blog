@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ArticleBody from '@/components/ArticleBody'
-import ManualPinButton from './ManualPinButton'
 
 interface Post {
   id: string
@@ -18,12 +17,8 @@ interface Post {
   status: string
   featured: boolean
   featuredImage: string | null
-  pinterestPinId: string | null
-  pinterestPinUrl: string | null
-  pinterestImage: string | null
-  pinterestPinnedAt: string | null
-  Category: { name: string }
-  Tag: { id: string; name: string }[]
+  category: { name: string }
+  tags: { id: string; name: string }[]
 }
 
 function SeoIndicator({ ok, label }: { ok: boolean; label: string }) {
@@ -39,7 +34,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [saving,  setSaving]  = useState(false)
-  const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'pinterest' | 'raw'>('preview')
+  const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'raw'>('preview')
   const [adminKey, setAdminKey] = useState('')
   const [post, setPost]       = useState(initial)
   const [confirm, setConfirm] = useState<'PUBLISHED' | 'REJECTED' | 'DELETE' | null>(null)
@@ -178,7 +173,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
             className="text-xl font-serif font-bold text-[#1A1A2E] max-w-2xl w-full resize-none bg-transparent border-b border-transparent hover:border-border focus:border-gold focus:outline-none leading-snug"
           />
           <p className="text-sm text-muted mt-1">
-            {post.Category.name} · {post.wordCount.toLocaleString()} words · {post.readingTime} min read ·{' '}
+            {post.category.name} · {post.wordCount.toLocaleString()} words · {post.readingTime} min read ·{' '}
             <span className={`font-medium ${STATUS_COLOR[post.status] ?? 'text-muted'}`}>{post.status}</span>
           </p>
         </div>
@@ -300,7 +295,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <div className="flex gap-1 border-b border-border">
-        {(['preview', 'edit', 'seo', 'pinterest', 'raw'] as const).map((t) => (
+        {(['preview', 'edit', 'seo', 'raw'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -310,7 +305,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
                 : 'border-transparent text-muted hover:text-navy'
             }`}
           >
-            {t === 'pinterest' ? '📌 Pinterest' : t}
+            {t}
             {t === 'seo' && (
               <span className={`ml-2 text-xs font-bold ${seoScore >= 80 ? 'text-green-500' : seoScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
                 {seoScore}%
@@ -493,57 +488,14 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
           <div>
             <p className="text-xs text-muted uppercase tracking-widest mb-2">Tags</p>
             <div className="flex flex-wrap gap-2">
-              {post.Tag.map((tag) => (
+              {post.tags.map((tag) => (
                 <span key={tag.id} className="bg-cream-2 text-muted text-xs px-2.5 py-1 rounded-full border border-border">
                   {tag.name}
                 </span>
               ))}
-              {post.Tag.length === 0 && <span className="text-xs text-muted">No tags — edit the post to add them.</span>}
+              {post.tags.length === 0 && <span className="text-xs text-muted">No tags — edit the post to add them.</span>}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Pinterest tab ─────────────────────────────────────── */}
-      {tab === 'pinterest' && (
-        <div className="bg-white rounded-xl border p-6 space-y-5 max-w-lg">
-          {post.pinterestPinUrl ? (
-            <>
-              <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
-                <span>✓</span>
-                <span className="text-sm font-medium">Pinned to Pinterest</span>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Pin URL</p>
-                <a href={post.pinterestPinUrl} target="_blank" rel="noopener noreferrer"
-                   className="text-sm text-blue-600 hover:underline break-all">
-                  {post.pinterestPinUrl}
-                </a>
-              </div>
-              {post.pinterestImage && (
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Pinterest Image (2:3)</p>
-                  <img src={post.pinterestImage} alt="Pinterest image"
-                       className="w-48 rounded-xl border" />
-                </div>
-              )}
-              {post.pinterestPinnedAt && (
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Pinned at</p>
-                  <p className="text-sm text-gray-700">
-                    {new Date(post.pinterestPinnedAt).toLocaleString()}
-                  </p>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-4xl mb-3">📌</p>
-              <p className="text-sm text-gray-500">Not yet pinned to Pinterest.</p>
-              <p className="text-xs text-gray-400 mt-1">Pins are auto-created when articles publish.</p>
-              <ManualPinButton postId={post.id} />
-            </div>
-          )}
         </div>
       )}
 

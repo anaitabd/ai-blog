@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-import { config } from 'dotenv'
-import { resolve } from 'path'
 import * as cdk from 'aws-cdk-lib'
 import { AiBlogStack } from './stack'
-
-// Load .env from parent directory
-config({ path: resolve(__dirname, '..', '.env') })
 
 const app = new cdk.App()
 

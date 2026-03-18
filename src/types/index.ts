@@ -11,6 +11,6 @@ export interface PostSummary {
   wordCount: number
   publishedAt: Date | null
   status: PostStatus
-  Category: { name: string; slug: string }
-  Tag: { name: string }[]
+  category: { name: string; slug: string }
+  tags: { name: string }[]
 }

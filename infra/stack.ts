@@ -186,44 +186,7 @@ export class AiBlogStack extends cdk.Stack {
       .when(sfn.Condition.booleanEquals('$.shouldRetry', true), waitStep.next(generateStep))
       .otherwise(publishStep)
 
-    // ─── Lambda: Pinterest Image Generator ─────────────────────────
-    const pinterestImageFn = new NodejsFunction(this, 'PinterestImageGen', {
-      functionName: 'ai-blog-pinterest-image',
-      entry: path.join(lambdaDir, 'pinterest-image-generator', 'index.ts'),
-      runtime: lambda.Runtime.NODEJS_20_X,
-      timeout: cdk.Duration.minutes(3),
-      memorySize: 256,
-      environment: sharedEnv,
-    })
-    pinterestImageFn.addToRolePolicy(bedrockPolicy)
-    pinterestImageFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['s3:PutObject'],
-      resources: [`${imagesBucket.bucketArn}/*`],
-    }))
-
-    // ─── Lambda: Pinterest Publisher ───────────────────────────────
-    const pinterestPublisherFn = new NodejsFunction(this, 'PinterestPublisher', {
-      functionName: 'ai-blog-pinterest-publisher',
-      entry: path.join(lambdaDir, 'pinterest-publisher', 'index.ts'),
-      runtime: lambda.Runtime.NODEJS_20_X,
-      timeout: cdk.Duration.minutes(2),
-      memorySize: 128,
-      environment: {
-        ...sharedEnv,
-        PINTEREST_ACCESS_TOKEN: process.env.PINTEREST_ACCESS_TOKEN ?? '',
-        PINTEREST_BOARD_INVESTING: process.env.PINTEREST_BOARD_INVESTING ?? '',
-        PINTEREST_BOARD_BUDGETING: process.env.PINTEREST_BOARD_BUDGETING ?? '',
-        PINTEREST_BOARD_DEBT: process.env.PINTEREST_BOARD_DEBT ?? '',
-        PINTEREST_BOARD_INCOME: process.env.PINTEREST_BOARD_INCOME ?? '',
-        PINTEREST_BOARD_GENERAL: process.env.PINTEREST_BOARD_GENERAL ?? '',
-        NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL ?? '',
-        WEBHOOK_SECRET: process.env.WEBHOOK_SECRET ?? '',
-      },
-    })
-
-    // ─── Main Pipeline: Generate → Quality Check → Publish → Done ──
     publishStep.next(successState)
-
     generateStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
     publishStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
 
@@ -233,29 +196,6 @@ export class AiBlogStack extends cdk.Stack {
       stateMachineName: 'ai-blog-pipeline',
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.minutes(30),
-    })
-
-    // ─── Pinterest Pipeline (triggered on admin approval) ────
-    const pinImageStep = new tasks.LambdaInvoke(this, 'GeneratePinterestImage', {
-      lambdaFunction: pinterestImageFn,
-      outputPath: '$.Payload',
-    })
-
-    const pinPublishStep = new tasks.LambdaInvoke(this, 'PublishToPinterest', {
-      lambdaFunction: pinterestPublisherFn,
-      outputPath: '$.Payload',
-    })
-
-    const pinterestSuccess = new sfn.Succeed(this, 'PinterestPipelineSuccess')
-
-    pinImageStep.next(pinPublishStep).next(pinterestSuccess)
-    pinImageStep.addCatch(pinterestSuccess, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
-    pinPublishStep.addCatch(pinterestSuccess, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
-
-    const pinterestStateMachine = new sfn.StateMachine(this, 'PinterestPipeline', {
-      stateMachineName: 'ai-blog-pinterest-pipeline',
-      definitionBody: sfn.DefinitionBody.fromChainable(pinImageStep),
-      timeout: cdk.Duration.minutes(10),
     })
 
     // ─── Lambda: Topic Picker ───────────────────────────────
@@ -286,10 +226,6 @@ export class AiBlogStack extends cdk.Stack {
     })
     new cdk.CfnOutput(this, 'TopicsTableName', { value: topicsTable.tableName })
     new cdk.CfnOutput(this, 'StateMachineArn', { value: stateMachine.stateMachineArn })
-    new cdk.CfnOutput(this, 'PinterestStateMachineArn', {
-      value: pinterestStateMachine.stateMachineArn,
-      description: 'Add this as PINTEREST_STATE_MACHINE_ARN in your .env',
-    })
     new cdk.CfnOutput(this, 'ImagesBucketName', { value: imagesBucket.bucketName })
     new cdk.CfnOutput(this, 'DbEndpoint', {
       value: database.dbInstanceEndpointAddress,

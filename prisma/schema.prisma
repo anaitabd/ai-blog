@@ -7,59 +7,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Category {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  Post      Post[]
-}
-
 model Post {
-  id                String     @id @default(cuid())
-  title             String
-  slug              String     @unique
-  excerpt           String
-  content           String
-  featuredImage     String?
-  status            PostStatus @default(DRAFT)
-  categoryId        String
-  metaTitle         String
-  metaDesc          String
-  schemaJson        String?
-  wordCount         Int        @default(0)
-  readingTime       Int        @default(0)
-  viewCount         Int        @default(0)
-  featured          Boolean    @default(false)
-  seoScore          Int?
-  publishedAt       DateTime?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  pinterestImage    String?
-  pinterestPinId    String?
-  pinterestPinUrl   String?
-  pinterestPinnedAt DateTime?
-  Category          Category   @relation(fields: [categoryId], references: [id])
-  Tag               Tag[]
+  id            String     @id @default(cuid())
+  title         String
+  slug          String     @unique
+  excerpt       String
+  content       String     @db.Text
+  featuredImage String?
+  status        PostStatus @default(DRAFT)
+  category      Category   @relation(fields: [categoryId], references: [id])
+  categoryId    String
+  tags          Tag[]
+  metaTitle     String
+  metaDesc      String
+  schemaJson    String?    @db.Text
+  wordCount     Int        @default(0)
+  readingTime   Int        @default(0)
+  viewCount     Int        @default(0)
+  featured      Boolean    @default(false)
+  seoScore      Int?
+  publishedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   @@index([slug])
   @@index([status, publishedAt])
 }
 
-model Subscriber {
+model Category {
   id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  active    Boolean  @default(true)
-  source    String   @default("website")
+  name      String   @unique
+  slug      String   @unique
+  posts     Post[]
   createdAt DateTime @default(now())
 }
 
 model Tag {
-  id   String @id @default(cuid())
-  name String @unique
-  slug String @unique
-  Post Post[]
+  id    String @id @default(cuid())
+  name  String @unique
+  slug  String @unique
+  posts Post[]
 }
 
 model TopicQueue {
@@ -75,6 +62,15 @@ model TopicQueue {
   failReason      String?
   createdAt       DateTime    @default(now())
   processedAt     DateTime?
+}
+
+model Subscriber {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  active    Boolean  @default(true)
+  source    String   @default("website")
+  createdAt DateTime @default(now())
 }
 
 enum PostStatus {
