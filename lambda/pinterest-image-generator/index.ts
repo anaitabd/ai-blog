@@ -11,14 +11,16 @@ const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION })
 const s3 = new S3Client({ region: process.env.AWS_REGION })
 
 interface PinterestImageEvent {
+  postId: string
   slug: string
   title: string
   category: string
   keyword: string
   excerpt: string
+  tags: string[]
 }
 
-export const handler = async (event: PinterestImageEvent): Promise<{ imageUrl: string }> => {
+export const handler = async (event: PinterestImageEvent) => {
   const { slug, title, category, keyword } = event
 
   const imagePrompt = buildPinterestImagePrompt(title, category, keyword)
@@ -70,7 +72,12 @@ export const handler = async (event: PinterestImageEvent): Promise<{ imageUrl: s
 
   const imageUrl = `https://${process.env.CLOUDFRONT_DOMAIN}/${key}`
   console.log(`Pinterest image created: ${imageUrl}`)
-  return { imageUrl }
+
+  // Forward all fields for the downstream Pinterest Publisher step
+  return {
+    ...event,
+    pinterestImageUrl: imageUrl,
+  }
 }
 
 function buildPinterestImagePrompt(title: string, category: string, keyword: string): string {

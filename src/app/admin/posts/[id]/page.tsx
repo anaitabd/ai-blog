@@ -11,7 +11,7 @@ export default async function ReviewPostPage({
 }) {
   const post = await prisma.post.findUnique({
     where: { id: params.id },
-    include: { category: true, tags: true },
+    include: { Category: true, Tag: true },
   })
 
   if (!post) notFound()

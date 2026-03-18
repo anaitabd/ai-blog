@@ -11,12 +11,12 @@ interface Props {
 export const revalidate = 3600
 
 export async function generateStaticParams() {
-  const categories = await prisma.category.findMany({ select: { slug: true } })
+  const categories = await prisma.Category.findMany({ select: { slug: true } })
   return categories.map((c) => ({ name: c.slug }))
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const category = await prisma.category.findUnique({ where: { slug: params.name } })
+  const category = await prisma.Category.findUnique({ where: { slug: params.name } })
   if (!category) return {}
   return {
     title: `${category.name} — Personal Finance Tips | WealthBeginners`,
@@ -28,7 +28,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function CategoryPage({ params }: Readonly<Props>) {
-  const category = await prisma.category.findUnique({
+  const category = await prisma.Category.findUnique({
     where: { slug: params.name },
   })
   if (!category) notFound()
@@ -36,7 +36,7 @@ export default async function CategoryPage({ params }: Readonly<Props>) {
   const posts = await prisma.post.findMany({
     where: { status: 'PUBLISHED', categoryId: category.id },
     orderBy: { publishedAt: 'desc' },
-    include: { category: true, tags: true },
+    include: { Category: true, Tag: true },
   })
 
   return (

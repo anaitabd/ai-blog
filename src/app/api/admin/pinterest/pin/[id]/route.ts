@@ -13,7 +13,7 @@ export async function POST(
 
   const post = await prisma.post.findUnique({
     where: { id: params.id },
-    include: { category: true, tags: true },
+    include: { Category: true, Tag: true },
   })
 
   if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
@@ -27,12 +27,12 @@ export async function POST(
       description: buildPinDescription({
         title: post.title,
         excerpt: post.excerpt,
-        tags: post.tags.map(t => t.name),
+        tags: post.Tag.map(t => t.name),
         keyword: post.metaTitle,
       }),
       link: `${process.env.NEXT_PUBLIC_SITE_URL}/${post.slug}?utm_source=pinterest`,
       imageUrl: post.pinterestImage ?? post.featuredImage!,
-      boardId: getBoardIdForCategory(post.category.name),
+      boardId: getBoardIdForCategory(post.Category.name),
       altText: `${post.title} — WealthBeginners personal finance guide`,
     })
 

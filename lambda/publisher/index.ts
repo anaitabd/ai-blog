@@ -95,14 +95,24 @@ export const handler = async (event: Event) => {
     throw new Error(`Webhook failed: ${res.status} — ${errText}`)
   }
 
-  const result = await res.json()
+  const result = await res.json() as { postId: string; slug: string }
   await updateTopic(topicId, 'DONE')
   await updateTopicStep(topicId, `Published — postId: ${result.postId}`, dynamo, process.env.TOPICS_TABLE!)
 
   log({ lambda: 'publisher', step: 'done', status: 'complete', pct: 100,
     meta: { postId: result.postId, slug: article.slug } })
 
-  return { success: true, postId: result.postId, slug: article.slug }
+  // Forward all fields needed by downstream Pinterest steps
+  return {
+    success: true,
+    postId: result.postId,
+    slug: article.slug,
+    title: article.title,
+    excerpt: article.excerpt,
+    keyword: event.keyword,
+    category,
+    tags: article.tags ?? [],
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

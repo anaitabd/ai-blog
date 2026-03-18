@@ -6,7 +6,7 @@ export default async function TrendingWidget() {
     where: { status: 'PUBLISHED' },
     orderBy: { viewCount: 'desc' },
     take: 5,
-    include: { category: true },
+    include: { Category: true },
   })
 
   if (posts.length === 0) return null
@@ -24,7 +24,7 @@ export default async function TrendingWidget() {
               {String(i + 1).padStart(2, '0')}
             </span>
             <div>
-              <p className="text-gold text-xs font-semibold mb-1">{post.category.name}</p>
+              <p className="text-gold text-xs font-semibold mb-1">{post.Category.name}</p>
               <Link
                 href={`/${post.slug}`}
                 className="text-sm font-medium text-[#1A1A2E] group-hover:text-gold transition-colors leading-snug line-clamp-2"

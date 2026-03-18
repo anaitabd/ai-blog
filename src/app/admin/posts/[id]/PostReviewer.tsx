@@ -178,7 +178,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
             className="text-xl font-serif font-bold text-[#1A1A2E] max-w-2xl w-full resize-none bg-transparent border-b border-transparent hover:border-border focus:border-gold focus:outline-none leading-snug"
           />
           <p className="text-sm text-muted mt-1">
-            {post.category.name} · {post.wordCount.toLocaleString()} words · {post.readingTime} min read ·{' '}
+            {post.Category.name} · {post.wordCount.toLocaleString()} words · {post.readingTime} min read ·{' '}
             <span className={`font-medium ${STATUS_COLOR[post.status] ?? 'text-muted'}`}>{post.status}</span>
           </p>
         </div>
@@ -493,12 +493,12 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
           <div>
             <p className="text-xs text-muted uppercase tracking-widest mb-2">Tags</p>
             <div className="flex flex-wrap gap-2">
-              {post.tags.map((tag) => (
+              {post.Tag.map((tag) => (
                 <span key={tag.id} className="bg-cream-2 text-muted text-xs px-2.5 py-1 rounded-full border border-border">
                   {tag.name}
                 </span>
               ))}
-              {post.tags.length === 0 && <span className="text-xs text-muted">No tags — edit the post to add them.</span>}
+              {post.Tag.length === 0 && <span className="text-xs text-muted">No tags — edit the post to add them.</span>}
             </div>
           </div>
         </div>

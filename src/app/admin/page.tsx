@@ -23,13 +23,13 @@ export default async function AdminPage() {
       where: { status: 'REVIEW' },
       orderBy: { createdAt: 'desc' },
       take: 8,
-      include: { category: true },
+      include: { Category: true },
     }),
     prisma.post.findMany({
       where: { status: 'PUBLISHED' },
       orderBy: { viewCount: 'desc' },
       take: 5,
-      include: { category: true },
+      include: { Category: true },
     }),
   ])
 
@@ -80,7 +80,7 @@ export default async function AdminPage() {
                   <div className="min-w-0">
                     <p className="font-medium text-sm text-[#1A1A2E] truncate">{post.title}</p>
                     <p className="text-xs text-muted mt-0.5">
-                      {post.category.name} · {post.wordCount.toLocaleString()} words ·{' '}
+                      {post.Category.name} · {post.wordCount.toLocaleString()} words ·{' '}
                       {new Date(post.createdAt).toLocaleDateString()}
                     </p>
                   </div>
@@ -113,7 +113,7 @@ export default async function AdminPage() {
                       {post.title}
                     </Link>
                     <p className="text-xs text-muted mt-0.5">
-                      {post.viewCount.toLocaleString()} views · {post.category.name}
+                      {post.viewCount.toLocaleString()} views · {post.Category.name}
                     </p>
                   </div>
                 </li>

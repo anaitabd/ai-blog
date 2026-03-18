@@ -2,7 +2,9 @@
   "name": "ai-blog-infra",
   "version": "1.0.0",
   "private": true,
-  "bin": { "infra": "bin/app.js" },
+  "bin": {
+    "infra": "bin/app.js"
+  },
   "scripts": {
     "build": "tsc",
     "deploy": "cdk deploy --require-approval never",
@@ -12,12 +14,13 @@
   },
   "dependencies": {
     "aws-cdk-lib": "^2.140.0",
-    "constructs": "^10.3.0"
+    "constructs": "^10.3.0",
+    "dotenv": "^17.3.1"
   },
   "devDependencies": {
-    "aws-cdk": "^2.140.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.4.5",
-    "esbuild": "^0.21.0"
+    "aws-cdk": "^2.140.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.5"
   }
 }

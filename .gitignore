@@ -6,4 +6,5 @@ dist
 *.zip
 .DS_Store
 prisma/migrations
-infra/*
+infra/cdk.out
+.idea

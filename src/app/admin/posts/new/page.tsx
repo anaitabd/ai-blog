@@ -4,7 +4,7 @@ import NewPostForm from './NewPostForm'
 export const dynamic = 'force-dynamic'
 
 export default async function NewPostPage() {
-  const categories = await prisma.category.findMany({
+  const categories = await prisma.Category.findMany({
     orderBy: { name: 'asc' },
     select: { id: true, name: true },
   })

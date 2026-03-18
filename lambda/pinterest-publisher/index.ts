@@ -3,7 +3,7 @@
 //  Called by the Step Functions pipeline after article is live
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getBoardIdForCategory, createPin, buildPinDescription, buildPinTitle } from '../../src/lib/pinterest'
+import { getBoardIdForCategory, createPin, buildPinDescription, buildPinTitle } from '../shared/pinterest'
 
 interface PinterestPublishEvent {
   postId: string

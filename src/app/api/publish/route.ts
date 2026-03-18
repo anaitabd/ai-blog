@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     const slug     = await uniqueSlug(slugBase)
 
     const categorySlug = categoryName.toLowerCase().replaceAll(/\s+/g, '-')
-    const category = await prisma.category.upsert({
+    const category = await prisma.Category.upsert({
       where: { slug: categorySlug },
       update: {},
       create: { name: categoryName, slug: categorySlug },
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
         readingTime,
         status: 'REVIEW',
       },
-      include: { category: true, tags: true },
+      include: { Category: true, Tag: true },
     })
 
     revalidatePath('/')

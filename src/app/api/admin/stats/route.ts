@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       where: { status: 'PUBLISHED' },
       orderBy: { viewCount: 'desc' },
       take: 5,
-      select: { id: true, title: true, slug: true, viewCount: true, category: { select: { name: true } } },
+      select: { id: true, title: true, slug: true, viewCount: true, Category: { select: { name: true } } },
     }),
   ])
 

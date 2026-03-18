@@ -29,7 +29,7 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const post = await prisma.post.findUnique({
     where: { slug: params.slug, status: 'PUBLISHED' },
-    include: { category: true },
+    include: { Category: true },
   })
   if (!post) return {}
 
@@ -78,7 +78,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ArticlePage({ params }: Props) {
   const post = await prisma.post.findUnique({
     where: { slug: params.slug, status: 'PUBLISHED' },
-    include: { category: true, tags: true },
+    include: { Category: true, Tag: true },
   })
 
   if (!post) notFound()
@@ -97,7 +97,7 @@ export default async function ArticlePage({ params }: Props) {
     },
     take: 3,
     orderBy: { publishedAt: 'desc' },
-    include: { category: true },
+    include: { Category: true },
   })
 
   const wordCount = post.wordCount || post.content.trim().split(/\s+/).length
@@ -119,8 +119,8 @@ export default async function ArticlePage({ params }: Props) {
           <nav className="flex items-center gap-2 text-xs text-muted mb-6">
             <Link href="/" className="hover:text-gold transition-colors">Home</Link>
             <span>/</span>
-            <Link href={`/category/${post.category.slug}`} className="hover:text-gold transition-colors">
-              {post.category.name}
+            <Link href={`/category/${post.Category.slug}`} className="hover:text-gold transition-colors">
+              {post.Category.name}
             </Link>
             <span>/</span>
             <span className="truncate max-w-[160px]">{post.title}</span>
@@ -130,10 +130,10 @@ export default async function ArticlePage({ params }: Props) {
           <header className="mb-8">
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <Link
-                href={`/category/${post.category.slug}`}
+                href={`/category/${post.Category.slug}`}
                 className="bg-gold/10 text-gold text-xs font-semibold px-3 py-1 rounded-full hover:bg-gold/20 transition-colors"
               >
-                {post.category.name}
+                {post.Category.name}
               </Link>
               <span className="text-muted text-xs">·</span>
               <span className="text-muted text-xs">{post.readingTime} min read</span>
@@ -184,9 +184,9 @@ export default async function ArticlePage({ params }: Props) {
           <ArticleBody content={post.content} />
 
           {/* Tags */}
-          {post.tags.length > 0 && (
+          {post.Tag.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-border">
-              {post.tags.map((tag) => (
+              {post.Tag.map((tag) => (
                 <span
                   key={tag.id}
                   className="bg-cream-2 text-muted text-xs px-3 py-1.5 rounded-full border border-border"

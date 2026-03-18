@@ -221,25 +221,8 @@ export class AiBlogStack extends cdk.Stack {
       },
     })
 
-    const pinterestImageStep = new tasks.LambdaInvoke(this, 'GeneratePinterestImage', {
-      lambdaFunction: pinterestImageFn,
-      outputPath: '$.Payload',
-    })
-
-    const pinterestPublishStep = new tasks.LambdaInvoke(this, 'PublishToPinterest', {
-      lambdaFunction: pinterestPublisherFn,
-      outputPath: '$.Payload',
-    })
-
-    // Chain: PublishContent → GeneratePinterestImage → PublishToPinterest → Success
-    publishStep
-      .next(pinterestImageStep)
-      .next(pinterestPublishStep)
-      .next(successState)
-
-    // Pinterest steps are non-blocking: failures fall through to success
-    pinterestImageStep.addCatch(successState, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
-    pinterestPublishStep.addCatch(successState, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+    // ─── Main Pipeline: Generate → Quality Check → Publish → Done ──
+    publishStep.next(successState)
 
     generateStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
     publishStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
@@ -250,6 +233,29 @@ export class AiBlogStack extends cdk.Stack {
       stateMachineName: 'ai-blog-pipeline',
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       timeout: cdk.Duration.minutes(30),
+    })
+
+    // ─── Pinterest Pipeline (triggered on admin approval) ────
+    const pinImageStep = new tasks.LambdaInvoke(this, 'GeneratePinterestImage', {
+      lambdaFunction: pinterestImageFn,
+      outputPath: '$.Payload',
+    })
+
+    const pinPublishStep = new tasks.LambdaInvoke(this, 'PublishToPinterest', {
+      lambdaFunction: pinterestPublisherFn,
+      outputPath: '$.Payload',
+    })
+
+    const pinterestSuccess = new sfn.Succeed(this, 'PinterestPipelineSuccess')
+
+    pinImageStep.next(pinPublishStep).next(pinterestSuccess)
+    pinImageStep.addCatch(pinterestSuccess, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+    pinPublishStep.addCatch(pinterestSuccess, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+
+    const pinterestStateMachine = new sfn.StateMachine(this, 'PinterestPipeline', {
+      stateMachineName: 'ai-blog-pinterest-pipeline',
+      definitionBody: sfn.DefinitionBody.fromChainable(pinImageStep),
+      timeout: cdk.Duration.minutes(10),
     })
 
     // ─── Lambda: Topic Picker ───────────────────────────────
@@ -280,6 +286,10 @@ export class AiBlogStack extends cdk.Stack {
     })
     new cdk.CfnOutput(this, 'TopicsTableName', { value: topicsTable.tableName })
     new cdk.CfnOutput(this, 'StateMachineArn', { value: stateMachine.stateMachineArn })
+    new cdk.CfnOutput(this, 'PinterestStateMachineArn', {
+      value: pinterestStateMachine.stateMachineArn,
+      description: 'Add this as PINTEREST_STATE_MACHINE_ARN in your .env',
+    })
     new cdk.CfnOutput(this, 'ImagesBucketName', { value: imagesBucket.bucketName })
     new cdk.CfnOutput(this, 'DbEndpoint', {
       value: database.dbInstanceEndpointAddress,

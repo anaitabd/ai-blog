@@ -23,12 +23,12 @@ interface Props {
     featuredImage: string | null
     readingTime: number
     publishedAt: Date | null
-    category: { name: string; slug: string }
+    Category: { name: string; slug: string }
   }
 }
 
 export default function ArticleCard({ post }: Props) {
-  const badgeColor = CATEGORY_COLORS[post.category.slug] ?? 'bg-navy'
+  const badgeColor = CATEGORY_COLORS[post.Category.slug] ?? 'bg-navy'
 
   return (
     <Link href={`/${post.slug}`} className="group block h-full">
@@ -51,7 +51,7 @@ export default function ArticleCard({ post }: Props) {
           )}
           {/* Category badge */}
           <span className={`absolute top-3 left-3 ${badgeColor} text-white text-xs font-semibold px-2.5 py-1 rounded-full`}>
-            {post.category.name}
+            {post.Category.name}
           </span>
         </div>
 
@@ -59,7 +59,7 @@ export default function ArticleCard({ post }: Props) {
         <div className="p-5 flex flex-col flex-1">
           {/* Meta row */}
           <div className="flex items-center gap-2 text-xs text-muted mb-3">
-            <span className="text-gold font-medium">{post.category.name}</span>
+            <span className="text-gold font-medium">{post.Category.name}</span>
             <span>·</span>
             <span>{post.readingTime} min read</span>
             {post.publishedAt && (
