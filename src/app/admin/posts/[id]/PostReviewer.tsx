@@ -32,13 +32,15 @@ function SeoIndicator({ ok, label }: { ok: boolean; label: string }) {
 
 export default function PostReviewer({ post: initial }: { post: Post }) {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
-  const [saving,  setSaving]  = useState(false)
-  const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'raw'>('preview')
-  const [adminKey, setAdminKey] = useState('')
-  const [post, setPost]       = useState(initial)
-  const [confirm, setConfirm] = useState<'PUBLISHED' | 'REJECTED' | 'DELETE' | null>(null)
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [loading, setLoading]       = useState(false)
+  const [saving,  setSaving]        = useState(false)
+  const [delegating, setDelegating] = useState(false)
+  const [tab, setTab]               = useState<'preview' | 'edit' | 'seo' | 'raw'>('preview')
+  const [adminKey, setAdminKey]     = useState('')
+  const [post, setPost]             = useState(initial)
+  const [confirm, setConfirm]       = useState<'PUBLISHED' | 'REJECTED' | 'DELETE' | null>(null)
+  const [saveMsg, setSaveMsg]       = useState<string | null>(null)
+  const [delegateMsg, setDelegateMsg] = useState<string | null>(null)
 
   const metaTitleOk  = post.metaTitle.length >= 50 && post.metaTitle.length <= 60
   const metaDescOk   = post.metaDesc.length  >= 145 && post.metaDesc.length  <= 158
@@ -130,6 +132,47 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
     if (res.ok) setPost((p) => ({ ...p, status }))
   }
 
+  async function delegateToCloud() {
+    const key = getKey()
+    if (!key) return
+    setDelegating(true)
+    setDelegateMsg(null)
+    const res = await fetch(`/api/admin/posts/${post.id}/delegate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+      body: JSON.stringify({
+        title:     post.title,
+        content:   post.content,
+        excerpt:   post.excerpt,
+        slug:      post.slug,
+        metaTitle: post.metaTitle,
+        metaDesc:  post.metaDesc,
+        featured:  post.featured,
+      }),
+    })
+    setDelegating(false)
+    if (res.ok) {
+      const { post: updated } = await res.json()
+      setPost((p) => ({
+        ...p,
+        title:       updated.title,
+        slug:        updated.slug,
+        excerpt:     updated.excerpt,
+        content:     updated.content,
+        metaTitle:   updated.metaTitle,
+        metaDesc:    updated.metaDesc,
+        wordCount:   updated.wordCount,
+        readingTime: updated.readingTime,
+        status:      updated.status,
+      }))
+      setDelegateMsg('Regenerated ✓')
+      setTimeout(() => setDelegateMsg(null), 5000)
+    } else {
+      const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
+      setDelegateMsg(`Error: ${error}`)
+    }
+  }
+
   async function deletePost() {
     const key = getKey()
     if (!key) return
@@ -190,6 +233,20 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
             }`}
           >
             {saving ? 'Saving…' : saveMsg ?? 'Save Changes'}
+          </button>
+
+          {/* Delegate to cloud agent */}
+          <button
+            onClick={delegateToCloud}
+            disabled={delegating || saving}
+            title="Save modifications and regenerate article content using the cloud AI agent"
+            className={`px-4 py-2 text-sm border rounded-xl transition-colors disabled:opacity-50 ${
+              delegateMsg?.startsWith('Error') ? 'border-red-300 text-red-600' :
+              delegateMsg ? 'border-green-300 text-green-700 bg-green-50' :
+              'border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-400'
+            }`}
+          >
+            {delegating ? 'Delegating…' : delegateMsg ?? '☁ Delegate to cloud agent'}
           </button>
 
           {/* Status transitions */}
