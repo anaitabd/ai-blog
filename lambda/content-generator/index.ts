@@ -10,10 +10,12 @@ interface Event {
   keyword: string
   category: string
   retryCount?: number
+  relatedArticle?: string
+  leadMagnet?: string
 }
 
 export const handler = async (event: Event) => {
-  const { topicId, keyword, category, retryCount = 0 } = event
+  const { topicId, keyword, category, retryCount = 0, relatedArticle, leadMagnet } = event
   const attempt = retryCount + 1
 
   log({ lambda: 'content-generator', step: 'handler-start', status: 'start', pct: 0,
@@ -25,7 +27,7 @@ export const handler = async (event: Event) => {
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'start', pct: 10,
       meta: { keyword, attempt } })
 
-    const article = await callBedrock(keyword, category, retryCount > 0)
+    const article = await callBedrock(keyword, category, retryCount > 0, relatedArticle, leadMagnet)
 
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'complete', pct: 70,
       meta: { titleLength: article.title?.length, contentWords: article.content?.trim().split(/\s+/).length } })
@@ -73,21 +75,49 @@ export const handler = async (event: Event) => {
 //  JSON parser — resilient to formatting variations from Bedrock
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Escape unescaped control characters inside JSON string literals.
+// LLMs often emit real newlines/tabs inside string values instead of \n/\t.
+function repairJsonStrings(text: string): string {
+  let inString = false
+  let escape   = false
+  let out      = ''
+  for (const ch of text) {
+    if (escape)                        { escape = false; out += ch; continue }
+    if (ch === '\\' && inString)       { escape = true;  out += ch; continue }
+    if (ch === '"')                    { inString = !inString; out += ch; continue }
+    if (inString) {
+      if (ch === '\n')                 { out += '\\n'; continue }
+      if (ch === '\r')                 { out += '\\r'; continue }
+      if (ch === '\t')                 { out += '\\t'; continue }
+    }
+    out += ch
+  }
+  return out
+}
+
 function parseBedrockJson(text: string): Record<string, unknown> {
-  // 1. Standard ```json ... ``` block (newline variants)
-  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
-  if (fenced) {
-    try { return JSON.parse(fenced[1].trim()) } catch { /* fall through */ }
-  }
+  // Build an ordered list of raw candidates to try
+  const candidates: (string | null)[] = []
 
-  // 2. First { ... } block in the response
+  // 1. Fenced ```json block — use GREEDY match so the full content field
+  //    (which may contain inner ``` code blocks) is captured correctly.
+  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*)\n?\s*```/)
+  if (fenced) candidates.push(fenced[1].trim())
+
+  // 2. First outermost { … } block
   const brace = text.match(/(\{[\s\S]*\})/)
-  if (brace) {
-    try { return JSON.parse(brace[1].trim()) } catch { /* fall through */ }
-  }
+  if (brace) candidates.push(brace[1].trim())
 
-  // 3. Whole text (model may have returned raw JSON)
-  try { return JSON.parse(text.trim()) } catch { /* fall through */ }
+  // 3. Whole text (model may have returned bare JSON)
+  candidates.push(text.trim())
+
+  for (const raw of candidates) {
+    if (!raw) continue
+    // Try as-is first, then with control-character repair
+    for (const candidate of [raw, repairJsonStrings(raw)]) {
+      try { return JSON.parse(candidate) } catch { /* try next */ }
+    }
+  }
 
   throw new Error(`Invalid JSON response from Bedrock — could not parse model output.\nRaw (first 300 chars): ${text.slice(0, 300)}`)
 }
@@ -96,108 +126,178 @@ function parseBedrockJson(text: string): Record<string, unknown> {
 //  Prompt builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function callBedrock(keyword: string, category: string, isRetry: boolean) {
+function buildPrompt(
+  keyword: string,
+  category: string,
+  isRetry: boolean,
+  relatedArticle?: string,
+  leadMagnet?: string
+): string {
+  const year = new Date().getFullYear()
   const retryNote = isRetry
-    ? '\n\n⚠️ RETRY NOTICE: The previous attempt was REJECTED. You MUST include ALL of:\n' +
-      '- A "## Table of Contents" section with anchor links right after the intro\n' +
-      '- A markdown table with |---| separator row\n' +
-      '- At least 2 callout boxes starting with "> 💡" or "> 📊" or "> ✅" or "> ⚠️"\n' +
-      '- "## Frequently Asked Questions" with at least 4 Q&A pairs\n' +
-      '- "According to [source]" used at least 3 times\n'
+    ? '\n⚠️ RETRY: Previous draft was rejected. Stay under 2,000 words. Be MORE concise, not less.\n'
     : ''
 
-  const prompt = `You are a friendly, expert personal-finance writer for WealthBeginners.com.
-Your readers are 25–35 year olds who are complete beginners. Write like a smart, encouraging friend explaining this over coffee — conversational, warm, direct, and occasionally light-humored. Use short paragraphs (2–3 sentences max), "you/your", and active voice.
+  const relatedLink = relatedArticle
+    ? relatedArticle
+    : 'another relevant article on WealthBeginners'
+
+  const cta = leadMagnet
+    ? leadMagnet
+    : 'Free Beginner Budget Spreadsheet'
+
+  return `Role: You are an elite personal finance copywriter writing for "WealthBeginners.com." Your tone is empathetic, fiercely honest, highly actionable, and conversational — like a smart friend giving advice over coffee.
 ${retryNote}
-TARGET KEYWORD: "${keyword}"
-CATEGORY: "${category}"
-MINIMUM LENGTH: 2200 words
 
-══════════════════════════════════════════════
-MANDATORY STRUCTURE — article WILL be rejected if any element is missing
-══════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARTICLE BRIEF
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Topic / Target keyword : "${keyword}"
+Category               : ${category}
+Year                   : ${year}
+Related article to link: ${relatedLink}
+Lead magnet CTA        : ${cta}
 
-1. TITLE (H1) — must include the keyword, a power word, and either a number or the current year (2026)
-   Examples: "7 Proven Ways to…", "The Complete 2026 Beginner's Guide to…"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE 6 WEALTHBEGINNERS RULES (NON-NEGOTIABLE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-2. INTRO (2 paragraphs max)
-   - Para 1: Bold hook — a surprising stat OR a relatable "have you ever…" question
-   - Para 2: Brief empathy + clear promise of what the reader will learn
+RULE 1 — WORD COUNT & PACING
+- Target: 1,500 to 1,900 words (a 7-minute read). NEVER exceed 2,000 words.
+- Maximum 2–3 SHORT sentences per paragraph. No walls of text.
+- Get to the point in every paragraph. Cut every sentence that does not add value.
 
-3. TABLE OF CONTENTS — immediately after the intro, no exceptions:
-   ## Table of Contents
-   - [Section Title One](#section-title-one)
-   - [Section Title Two](#section-title-two)
-   ... (one entry per H2; anchor = lowercase title with spaces → hyphens)
+RULE 2 — ZERO AI FLUFF
+Banned words (never use these):
+delve, tapestry, testament, crucial, furthermore, undeniably, navigate, beacon,
+embark, robust, foster, leverage, utilize, multifaceted, holistic, groundbreaking,
+it's worth noting, in today's world, in conclusion, to summarize, remember that
 
-4. MINIMUM 6 H2 SECTIONS (##) — use engaging titles, NOT generic ones.
-   Required topics to cover (adapt wording):
-   - What it is / Why it matters for beginners
-   - Step-by-step how to get started
-   - Common mistakes to avoid
-   - Best tools or options compared
-   - Expert tips & insider tricks
-   - Conclusion + next steps
+- First sentence: hook with a relatable pain point, surprising real statistic, or hard truth. NO generic intros like "In today's financial landscape..."
+- Last section: end abruptly with the CTA. Never write "In conclusion" or "To summarize."
 
-5. COMPARISON TABLE — mandatory, must use this exact format:
-   | Option | Pros | Cons | Best For |
-   |--------|------|------|----------|
-   | …      | …    | …    | …        |
+RULE 3 — AGGRESSIVE SCANNABILITY
+- Use H2 tags for major sections, H3 for sub-points
+- Bold the single most important sentence in every major section
+- Use bullet points and comparison tables for data and steps
+- Include at least 3 visual callout boxes using:
+  💡 Pro Tip: [1-2 sentence actionable tip]
+  ⚠️ Warning: [1-2 sentence risk or mistake]
+  📊 By the Numbers: [real statistic with source name — Federal Reserve, BLS, Bankrate, etc.]
 
-6. CALLOUT BOXES — at least 2, emoji is the first character after "> ":
-   > 💡 **Pro Tip:** [actionable tip]
-   > 📊 **By the Numbers:** [statistic with source]
-   > ✅ **Key Takeaway:** [summary point]
-   > ⚠️ **Warning:** [pitfall to avoid]
+RULE 4 — HUMAN-FIRST SEO & INTERNAL LINKING
+- Use the target keyword naturally in: H1, first 100 words, one H2, final section
+- Do NOT force awkward keyword phrasing — adjust so it sounds like natural speech
+- In the MIDDLE of the article, write a natural transition sentence linking to: "${relatedLink}"
+  Example: "If you're also working on cutting expenses, our guide on [related topic] walks you through exactly how to do it."
+- Use 2–3 LSI keywords (related terms) throughout — do NOT repeat exact keyword more than 4 times
 
-7. DATA CITATIONS — use "According to [source]," at least 3 times
-   (sources: Federal Reserve, FDIC, Bankrate, NerdWallet, Vanguard, Fidelity, Bureau of Labor Statistics, CNBC, Investopedia)
+RULE 5 — E-E-A-T PLACEHOLDERS (Critical — do NOT skip)
+Insert exactly 3 personal anecdote placeholders throughout the article.
+Format them EXACTLY like this:
 
-8. FAQ SECTION — minimum 4 Q&A pairs:
-   ## Frequently Asked Questions
-   ### Q: [specific beginner question]?
-   [2–3 sentence plain-English answer]
+[INSERT PERSONAL ANECDOTE: Tell me what specific relatable struggle or
+financial win I should share here to build trust with a beginner.
+Be specific — e.g., "Share a time you overspent on a budget category
+and what you did to fix it" or "Share when you first opened your Roth IRA
+and what surprised you about the process."]
 
-9. CONCLUSION H2 — friendly recap + 1–2 action steps the reader can take today
+Place them: one in the intro section, one in the middle, one near the end.
+These are placeholders the site owner will fill in — do NOT invent fake stories.
 
-══════════════════════════════════════════════
-SEO RULES
-══════════════════════════════════════════════
-- Include the exact keyword in: title, first sentence of intro, at least 2 H2 headings, conclusion
-- Include 5 LSI (semantically related) keywords naturally through the article — list them in the JSON output
-- Keep sentences varied: some short (under 12 words) for punch, some longer for explanation
-- No keyword stuffing; no "In conclusion" or "In summary" phrases
+RULE 6 — CONVERSION CTA (final section only)
+End the article with ONE powerful call-to-action:
+- No "In conclusion" or "Final thoughts" header
+- Use a direct, benefit-focused H2 like: "Get Your Free [Lead Magnet Name]"
+- Tell the reader EXACTLY what problem the "${cta}" solves for them
+- Make it urgent and specific: "Download it now and fill in your numbers tonight."
+- Do NOT add anything after the CTA
 
-══════════════════════════════════════════════
-QUALITY SELF-CHECK before outputting
-══════════════════════════════════════════════
-[ ] Word count ≥ 2200
-[ ] "## Table of Contents" present right after intro
-[ ] H2 count ≥ 6
-[ ] Table with |---| row present
-[ ] ≥ 2 callout boxes ("> 💡/📊/✅/⚠️")
-[ ] ≥ 3 "According to [source]" citations
-[ ] "## Frequently Asked Questions" with ≥ 4 entries
-[ ] Paragraphs are short (2–3 sentences), readable
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED ARTICLE STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-No prohibited content: no gambling, adult, drugs, hate speech.
+1. H1 title (55–65 chars, includes keyword naturally, includes ${year})
+2. Hook paragraph — no H2, straight into the pain point or stat
+3. [INSERT PERSONAL ANECDOTE #1]
+4. ## What This Article Covers — bullet list of 4–5 takeaways
+5. ## [Section 1] — first key concept (H3 sub-points if needed)
+6. ## [Section 2] — second key concept + 📊 By the Numbers callout
+7. ## [Section 3] — step-by-step OR comparison table
+8. [INSERT PERSONAL ANECDOTE #2]
+9. ## [Section 4] — common mistakes or warnings + ⚠️ Warning callout
+10. Natural internal link transition to: "${relatedLink}"
+11. ## [Section 5] — pro tips + 💡 Pro Tip callout
+12. [INSERT PERSONAL ANECDOTE #3]
+13. ## Get Your Free ${cta} — CTA section (LAST, no summary after this)
 
-Respond ONLY with this exact JSON block (no text before or after):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REAL DATA REQUIREMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Include at least 3 real statistics from credible sources:
+- Federal Reserve (federalreserve.gov)
+- Bureau of Labor Statistics (bls.gov)
+- FDIC (fdic.gov)
+- Bankrate, NerdWallet, Fidelity research
+- Pew Research Center
+Format: "According to [Source], [specific stat with number and year]."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FEATURED IMAGE PROMPT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Write a specific Titan Image Generator prompt:
+- Brand colors: navy blue (#0B1628) background, gold (#C9A84C) accents
+- Style: flat design illustration, financial editorial magazine
+- No text, no faces, no logos, no copyright elements
+- 16:9 landscape format
+- Be specific about the visual metaphor (e.g., "stack of coins growing into
+  a bar chart" not just "money")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEO METADATA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Meta title: 50–60 chars, includes keyword, ends with "| WealthBeginners"
+- Meta description: 145–158 chars, includes keyword, has a compelling hook
+- URL slug: lowercase, hyphens only, no special characters, keyword-first
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SELF-CHECK BEFORE RESPONDING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Before writing the JSON, verify:
+□ Word count is between 1,500 and 1,900 words
+□ Zero banned words used (delve, tapestry, crucial, etc.)
+□ First sentence is a hook — not a generic intro
+□ Exactly 3 E-E-A-T anecdote placeholders inserted
+□ At least 3 callout boxes (💡 ⚠️ 📊)
+□ Natural internal link to related article in the middle
+□ Article ends with CTA — nothing written after it
+□ At least 3 real statistics with source names
+□ Meta title is 50–60 characters
+□ Meta description is 145–158 characters
+□ No "In conclusion", "To summarize", "Remember that"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT (strict — no text before or after JSON block)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Respond ONLY with this JSON:
+
 \`\`\`json
 {
-  "title": "Engaging title with keyword, power word, and number or year",
-  "slug": "url-friendly-slug-max-80-chars",
-  "excerpt": "Compelling 150-160 character excerpt that makes readers click",
-  "content": "# Full Title\\n\\n[complete markdown — intro, ToC, all H2 sections, table, callouts, FAQ, conclusion]",
-  "metaTitle": "SEO meta title under 60 chars with keyword",
-  "metaDesc": "150-160 char meta description, includes keyword, ends with a benefit",
-  "tags": ["tag1","tag2","tag3","tag4","tag5"],
-  "schemaJson": "{\\"@context\\":\\"https://schema.org\\",\\"@type\\":\\"Article\\",\\"headline\\":\\"title\\",\\"description\\":\\"excerpt\\",\\"author\\":{\\"@type\\":\\"Organization\\",\\"name\\":\\"WealthBeginners\\"},\\"publisher\\":{\\"@type\\":\\"Organization\\",\\"name\\":\\"WealthBeginners\\",\\"logo\\":{\\"@type\\":\\"ImageObject\\",\\"url\\":\\"https://wealthbeginners.com/logo.png\\"}}}",
-  "imagePrompt": "Professional editorial illustration for a personal finance blog: [describe visual concept without people or faces]. Flat design style.",
-  "imageAlt": "SEO alt text describing the image content, under 125 chars, includes keyword",
-  "lsiKeywords": ["semantic variant 1","semantic variant 2","semantic variant 3","semantic variant 4","semantic variant 5"]
+  "title": "H1 title 55–65 chars with keyword and ${year}",
+  "slug": "keyword-first-url-slug",
+  "excerpt": "Compelling 145–158 char excerpt with keyword and hook that makes someone want to read",
+  "content": "# Title Here\\n\\n[Full 1500–1900 word markdown article with all 6 rules applied]",
+  "metaTitle": "Keyword Phrase ${year} | WealthBeginners",
+  "metaDesc": "145–158 char description with keyword and hook — no generic phrasing",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "schemaJson": "{\\"@context\\":\\"https://schema.org\\",\\"@type\\":\\"Article\\",\\"headline\\":\\"...\\",\\"description\\":\\"...\\",\\"datePublished\\":\\"${new Date().toISOString()}\\",\\"dateModified\\":\\"${new Date().toISOString()}\\",\\"author\\":{\\"@type\\":\\"Organization\\",\\"name\\":\\"WealthBeginners Editorial Team\\",\\"url\\":\\"https://wealthbeginners.com/about\\"},\\"publisher\\":{\\"@type\\":\\"Organization\\",\\"name\\":\\"WealthBeginners.com\\",\\"url\\":\\"https://wealthbeginners.com\\"}}",
+  "imagePrompt": "Flat design illustration [specific visual description related to topic], navy blue background #0B1628, gold (#C9A84C) accents, clean financial editorial magazine style, no text, no faces, no logos, 16:9 landscape format, professional quality"
 }
 \`\`\``
+}
+
+async function callBedrock(keyword: string, category: string, isRetry: boolean, relatedArticle?: string, leadMagnet?: string) {
+  const prompt = buildPrompt(keyword, category, isRetry, relatedArticle, leadMagnet)
 
   const command = new InvokeModelCommand({
     modelId: process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -223,37 +323,135 @@ Respond ONLY with this exact JSON block (no text before or after):
 
 function checkQuality(content: string) {
   const issues: string[] = []
+  const warnings: string[] = []
+  let score = 100
+
+  // ── Word Count (Rule 1) ────────────────────────────────────────────────
   const wordCount = content.trim().split(/\s+/).length
 
-  if (wordCount < 1800)
-    issues.push(`Word count too low: ${wordCount} (minimum 1800)`)
+  if (wordCount < 1400) {
+    issues.push(`Too short: ${wordCount} words (minimum 1,400)`)
+    score -= 30
+  } else if (wordCount > 2100) {
+    issues.push(`Too long: ${wordCount} words (maximum 2,000 — trim it down)`)
+    score -= 20
+  } else if (wordCount > 1900) {
+    warnings.push(`Word count ${wordCount} is close to the 2,000 cap — consider trimming`)
+    score -= 5
+  }
 
+  // ── Banned Words (Rule 2) ──────────────────────────────────────────────
+  const BANNED_WORDS = [
+    'delve', 'tapestry', 'testament', 'crucial', 'furthermore',
+    'undeniably', 'navigate', 'beacon', 'embark', 'robust',
+    'foster', 'leverage', 'utilize', 'multifaceted', 'holistic',
+    'groundbreaking', "it's worth noting", "in today's world",
+    'in conclusion', 'to summarize', 'remember that',
+  ]
+  const foundBanned: string[] = []
+  for (const word of BANNED_WORDS) {
+    const regex = new RegExp(`\\b${word}\\b`, 'i')
+    if (regex.test(content)) foundBanned.push(word)
+  }
+  if (foundBanned.length > 0) {
+    warnings.push(`Banned AI words found: ${foundBanned.join(', ')} — regenerate`)
+    score -= foundBanned.length * 5
+  }
+
+  // ── Generic intro check (Rule 2) ──────────────────────────────────────
+  const genericIntros = [
+    /^in today'?s (world|financial landscape|economy)/im,
+    /^are you (looking|struggling|trying) to/im,
+    /^managing (your )?finances (can be|is)/im,
+    /^when it comes to/im,
+  ]
+  for (const pattern of genericIntros) {
+    if (pattern.test(content.slice(0, 300))) {
+      warnings.push('Generic intro detected — first sentence should be a hook (stat, pain point, or hard truth)')
+      score -= 10
+      break
+    }
+  }
+
+  // ── Scannability (Rule 3) ──────────────────────────────────────────────
   const h2Count = (content.match(/^## /gm) || []).length
-  if (h2Count < 5)
-    issues.push(`Not enough H2 sections: ${h2Count} (minimum 5)`)
+  if (h2Count < 4) {
+    issues.push(`Only ${h2Count} H2 sections (minimum 4 needed)`)
+    score -= 15
+  }
 
-  if (!content.includes('|---|') && !content.includes('| --- |') && !/\|.+\|.+\|/.test(content))
-    issues.push('No comparison table found')
+  const hasBold = /\*\*[^*]{10,}\*\*/.test(content)
+  if (!hasBold) {
+    warnings.push('No bolded sentences found — bold the key takeaway in each section')
+    score -= 5
+  }
 
-  const calloutPattern = /^> [\u{1F4A1}\u{1F4CA}\u{2705}\u{26A0}]/gmu
-  const callouts = (content.match(calloutPattern) ?? []).length
-  if (callouts < 2)
-    issues.push(`Not enough callout boxes: ${callouts} (minimum 2)`)
+  const callouts = {
+    tip:     (content.match(/💡/g) || []).length,
+    warning: (content.match(/⚠️/g) || []).length,
+    data:    (content.match(/📊/g) || []).length,
+  }
+  const totalCallouts = callouts.tip + callouts.warning + callouts.data
+  if (totalCallouts < 3) {
+    warnings.push(`Only ${totalCallouts} callout boxes (need at least 3: 💡 ⚠️ 📊)`)
+    score -= 8
+  }
 
-  if (!/##\s*(frequently asked questions|FAQ)/i.test(content))
-    issues.push('Missing FAQ section (add ## Frequently Asked Questions)')
+  const hasTable = content.includes('|---|') || content.includes('| --- |')
+  if (!hasTable) {
+    warnings.push('No comparison table found — add one for scannability and SEO')
+    score -= 5
+  }
 
-  if (!/according to/i.test(content))
-    issues.push('No data citations found (add "According to [source]")')
+  // ── Internal Link (Rule 4) ─────────────────────────────────────────────
+  const hasInternalLink = /\[INTERNAL_LINK:/i.test(content) || /wealthbeginners\.com\//i.test(content)
+  if (!hasInternalLink) {
+    warnings.push('No internal link placeholder found — add [INTERNAL_LINK: topic] in the middle')
+    score -= 8
+  }
 
-  if (!/##\s*table of contents/i.test(content))
-    issues.push('Missing Table of Contents (add "## Table of Contents" after intro)')
+  // ── E-E-A-T Placeholders (Rule 5) ─────────────────────────────────────
+  const anecdoteCount = (content.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
+  if (anecdoteCount < 3) {
+    issues.push(`Only ${anecdoteCount} E-E-A-T placeholders (need exactly 3 — Google requires Experience signals)`)
+    score -= 20
+  }
 
-  const prohibited = [/\b(casino|gambling)\b/i, /\b(porn|xxx)\b/i, /\b(cocaine|heroin)\b/i]
-  for (const p of prohibited)
-    if (p.test(content)) issues.push(`Prohibited content: ${p.source}`)
+  // ── Real Data (supporting Rule 4) ─────────────────────────────────────
+  const hasStats = /according to|per the|data from|research (shows|found)|survey (found|shows)|reports that/i.test(content)
+  if (!hasStats) {
+    warnings.push('No cited statistics found — add at least 3 real data points with source names')
+    score -= 10
+  }
 
-  return { passed: issues.length === 0, wordCount, issues }
+  // ── No AI Endings (Rule 2) ─────────────────────────────────────────────
+  const last500 = content.slice(-500).toLowerCase()
+  if (/in conclusion|to summarize|to wrap up|in summary|as we've (seen|discussed)/.test(last500)) {
+    warnings.push('Generic AI conclusion detected — remove it, end with the CTA directly')
+    score -= 10
+  }
+
+  // ── Prohibited Content ─────────────────────────────────────────────────
+  const PROHIBITED = [
+    /\b(casino|gambling|poker|bet365)\b/i,
+    /\b(porn|xxx|adult content|escort)\b/i,
+    /\b(cocaine|heroin|meth|fentanyl)\b/i,
+    /\b(hack account|crack password|pirate software)\b/i,
+  ]
+  for (const pattern of PROHIBITED) {
+    if (pattern.test(content)) {
+      issues.push(`Prohibited content detected: ${pattern.source}`)
+      score -= 50
+    }
+  }
+
+  return {
+    passed: issues.length === 0 && score >= 60,
+    wordCount,
+    score: Math.max(0, score),
+    issues,
+    warnings,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

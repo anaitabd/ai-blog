@@ -3,8 +3,16 @@ import { randomUUID } from 'crypto'
 
 const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION })
 
+interface Topic {
+  keyword: string
+  category: string
+  priority: number
+  relatedArticle?: string
+  leadMagnet?: string
+}
+
 // ─── Edit this list to match your niche ──────────────────────
-const TOPICS = [
+const TOPICS: Topic[] = [
   // High CPC — debt & credit (advertisers pay top dollar here)
   { keyword: 'how to pay off credit card debt fast', category: 'Debt', priority: 10 },
   { keyword: 'best balance transfer credit cards 2025', category: 'Credit Cards', priority: 10 },
@@ -28,7 +36,13 @@ const TOPICS = [
   { keyword: 'best budgeting apps that actually work', category: 'Budgeting', priority: 8 },
   { keyword: 'how to save money fast on a tight budget', category: 'Saving', priority: 8 },
   { keyword: 'sinking funds explained how to use them', category: 'Saving', priority: 7 },
-  { keyword: 'how to build an emergency fund from scratch', category: 'Saving', priority: 8 },
+  {
+    keyword: 'how to build an emergency fund from scratch',
+    category: 'Saving',
+    priority: 8,
+    relatedArticle: 'How to Budget on a Low Income — WealthBeginners',
+    leadMagnet: 'Free Emergency Fund Tracker Spreadsheet',
+  },
 
   // High CPC — income & side hustles (advertiser goldmine)
   { keyword: 'best passive income ideas that actually work', category: 'Income', priority: 10 },
@@ -68,6 +82,8 @@ export const handler = async () => {
             priority: { N: String(topic.priority) },
             status: { S: 'PENDING' },
             createdAt: { S: new Date().toISOString() },
+            relatedArticle: topic.relatedArticle ? { S: topic.relatedArticle } : { NULL: true },
+            leadMagnet: topic.leadMagnet ? { S: topic.leadMagnet } : { NULL: true },
           },
         })
       )

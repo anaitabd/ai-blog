@@ -40,7 +40,15 @@ export default async function PostsPage({
 
   return (
     <div className="space-y-6">
-      <h2 className="font-serif text-2xl font-bold text-[#1A1A2E]">Posts</h2>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-serif text-2xl font-bold text-[#1A1A2E]">Posts</h2>
+        <Link
+          href="/admin/posts/new"
+          className="px-4 py-2 text-sm bg-gold hover:bg-gold-2 text-navy font-semibold rounded-xl transition-colors"
+        >
+          + New Post
+        </Link>
+      </div>
 
       {/* Status tabs */}
       <div className="flex gap-2 flex-wrap">

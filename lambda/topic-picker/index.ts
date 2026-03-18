@@ -25,10 +25,12 @@ export const handler = async () => {
     return { status: 'empty' }
   }
 
-  const topic    = result.Items[0]
-  const topicId  = topic.id.S!
-  const keyword  = topic.keyword.S!
-  const category = topic.category.S!
+  const topic       = result.Items[0]
+  const topicId     = topic.id.S!
+  const keyword     = topic.keyword.S!
+  const category    = topic.category.S!
+  const relatedArticle = topic.relatedArticle?.S
+  const leadMagnet     = topic.leadMagnet?.S
 
   await dynamo.send(
     new UpdateItemCommand({
@@ -50,7 +52,7 @@ export const handler = async () => {
     new StartExecutionCommand({
       stateMachineArn: process.env.STATE_MACHINE_ARN!,
       name: executionName,
-      input: JSON.stringify({ topicId, keyword, category }),
+      input: JSON.stringify({ topicId, keyword, category, relatedArticle, leadMagnet }),
     })
   )
 
