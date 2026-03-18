@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Slug already in use — change the title or slug' }, { status: 409 })
   }
 
-  const category = await prisma.Category.findUnique({ where: { id: categoryId }, select: { id: true } })
+  const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } })
   if (!category) {
     return NextResponse.json({ error: 'Category not found' }, { status: 400 })
   }

@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     const slug     = await uniqueSlug(slugBase)
 
     const categorySlug = categoryName.toLowerCase().replaceAll(/\s+/g, '-')
-    const category = await prisma.Category.upsert({
+    const category = await prisma.category.upsert({
       where: { slug: categorySlug },
       update: {},
       create: { name: categoryName, slug: categorySlug },
