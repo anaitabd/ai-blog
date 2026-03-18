@@ -48,6 +48,17 @@ export async function POST(req: NextRequest) {
     .map((t: string) => t.trim().toLowerCase())
     .filter(Boolean)
 
+  const tagRecords = await Promise.all(
+    cleanTags.map((name: string) => {
+      const tagSlug = generateSlug(name)
+      return prisma.tag.upsert({
+        where: { name },
+        update: {},
+        create: { name, slug: tagSlug },
+      })
+    })
+  )
+
   const post = await prisma.post.create({
     data: {
       title,
@@ -61,13 +72,8 @@ export async function POST(req: NextRequest) {
       readingTime,
       featured,
       status: 'DRAFT',
-      tags: cleanTags.length > 0
-        ? {
-            connectOrCreate: cleanTags.map((name: string) => ({
-              where: { name },
-              create: { name, slug: generateSlug(name) },
-            })),
-          }
+      Tag: tagRecords.length > 0
+        ? { connect: tagRecords.map((t) => ({ id: t.id })) }
         : undefined,
     },
     include: { Category: true, Tag: true },

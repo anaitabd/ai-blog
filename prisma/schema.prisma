@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Category {
-  id        String   @id
+  id        String   @id @default(cuid())
   name      String   @unique
   slug      String   @unique
   createdAt DateTime @default(now())
@@ -16,7 +16,7 @@ model Category {
 }
 
 model Post {
-  id                String     @id
+  id                String     @id @default(cuid())
   title             String
   slug              String     @unique
   excerpt           String
@@ -34,7 +34,7 @@ model Post {
   seoScore          Int?
   publishedAt       DateTime?
   createdAt         DateTime   @default(now())
-  updatedAt         DateTime
+  updatedAt         DateTime   @updatedAt
   pinterestImage    String?
   pinterestPinId    String?
   pinterestPinUrl   String?
@@ -47,7 +47,7 @@ model Post {
 }
 
 model Subscriber {
-  id        String   @id
+  id        String   @id @default(cuid())
   name      String
   email     String   @unique
   active    Boolean  @default(true)
@@ -56,14 +56,14 @@ model Subscriber {
 }
 
 model Tag {
-  id   String @id
+  id   String @id @default(cuid())
   name String @unique
   slug String @unique
   Post Post[]
 }
 
 model TopicQueue {
-  id              String      @id
+  id              String      @id @default(cuid())
   keyword         String
   category        String
   priority        Int         @default(0)

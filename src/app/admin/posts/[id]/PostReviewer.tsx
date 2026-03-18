@@ -22,8 +22,8 @@ interface Post {
   pinterestPinUrl: string | null
   pinterestImage: string | null
   pinterestPinnedAt: string | null
-  category: { name: string }
-  tags: { id: string; name: string }[]
+  Category: { name: string }
+  Tag: { id: string; name: string }[]
 }
 
 function SeoIndicator({ ok, label }: { ok: boolean; label: string }) {

@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
         ...data,
         slug,
         categoryId: category.id,
-        tags: { connect: tagRecords.map((t) => ({ id: t.id })) },
+        Tag: { connect: tagRecords.map((t) => ({ id: t.id })) },
         wordCount,
         readingTime,
         status: 'REVIEW',
