@@ -23,6 +23,18 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.amazonaws.com' },
     ],
   },
+  env: {
+    DATABASE_URL: process.env.DATABASE_URL,
+    ADMIN_API_KEY: process.env.ADMIN_API_KEY,
+    CLOUDFRONT_DOMAIN: process.env.CLOUDFRONT_DOMAIN,
+    NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL,
+    WEBHOOK_SECRET: process.env.WEBHOOK_SECRET,
+    REGION: process.env.REGION,
+    S3_BUCKET: process.env.S3_BUCKET,
+    STATE_MACHINE_ARN: process.env.STATE_MACHINE_ARN,
+    TOPICS_TABLE: process.env.TOPICS_TABLE,
+    PINTEREST_ACCESS_TOKEN: process.env.PINTEREST_ACCESS_TOKEN,
+  },
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],
   },

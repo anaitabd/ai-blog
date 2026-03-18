@@ -5,6 +5,7 @@ frontend:
       commands:
         - npm ci
         - npx prisma generate
+        - env | grep -E '^(DATABASE_URL|ADMIN_API_KEY|CLOUDFRONT_DOMAIN|NEXTJS_SITE_URL|NEXT_PUBLIC_|PINTEREST_|REGION|S3_BUCKET|STATE_MACHINE_ARN|TOPICS_TABLE|WEBHOOK_SECRET)=' > .env.production
     build:
       commands:
         - npm run build
