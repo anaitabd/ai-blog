@@ -27,6 +27,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Pinterest Rich Pins domain verification */}
+        {process.env.NEXT_PUBLIC_PINTEREST_VERIFY && (
+          <meta name="p:domain_verify" content={process.env.NEXT_PUBLIC_PINTEREST_VERIFY} />
+        )}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
