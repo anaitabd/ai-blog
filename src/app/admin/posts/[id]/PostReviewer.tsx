@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ArticleBody from '@/components/ArticleBody'
+import ManualPinButton from './ManualPinButton'
 
 interface Post {
   id: string
@@ -17,6 +18,10 @@ interface Post {
   status: string
   featured: boolean
   featuredImage: string | null
+  pinterestPinId: string | null
+  pinterestPinUrl: string | null
+  pinterestImage: string | null
+  pinterestPinnedAt: string | null
   category: { name: string }
   tags: { id: string; name: string }[]
 }
@@ -34,7 +39,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [saving,  setSaving]  = useState(false)
-  const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'raw'>('preview')
+  const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'pinterest' | 'raw'>('preview')
   const [adminKey, setAdminKey] = useState('')
   const [post, setPost]       = useState(initial)
   const [confirm, setConfirm] = useState<'PUBLISHED' | 'REJECTED' | 'DELETE' | null>(null)
@@ -295,7 +300,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <div className="flex gap-1 border-b border-border">
-        {(['preview', 'edit', 'seo', 'raw'] as const).map((t) => (
+        {(['preview', 'edit', 'seo', 'pinterest', 'raw'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -305,7 +310,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
                 : 'border-transparent text-muted hover:text-navy'
             }`}
           >
-            {t}
+            {t === 'pinterest' ? '📌 Pinterest' : t}
             {t === 'seo' && (
               <span className={`ml-2 text-xs font-bold ${seoScore >= 80 ? 'text-green-500' : seoScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
                 {seoScore}%
@@ -496,6 +501,49 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
               {post.tags.length === 0 && <span className="text-xs text-muted">No tags — edit the post to add them.</span>}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Pinterest tab ─────────────────────────────────────── */}
+      {tab === 'pinterest' && (
+        <div className="bg-white rounded-xl border p-6 space-y-5 max-w-lg">
+          {post.pinterestPinUrl ? (
+            <>
+              <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                <span>✓</span>
+                <span className="text-sm font-medium">Pinned to Pinterest</span>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Pin URL</p>
+                <a href={post.pinterestPinUrl} target="_blank" rel="noopener noreferrer"
+                   className="text-sm text-blue-600 hover:underline break-all">
+                  {post.pinterestPinUrl}
+                </a>
+              </div>
+              {post.pinterestImage && (
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Pinterest Image (2:3)</p>
+                  <img src={post.pinterestImage} alt="Pinterest image"
+                       className="w-48 rounded-xl border" />
+                </div>
+              )}
+              {post.pinterestPinnedAt && (
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Pinned at</p>
+                  <p className="text-sm text-gray-700">
+                    {new Date(post.pinterestPinnedAt).toLocaleString()}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-4xl mb-3">📌</p>
+              <p className="text-sm text-gray-500">Not yet pinned to Pinterest.</p>
+              <p className="text-xs text-gray-400 mt-1">Pins are auto-created when articles publish.</p>
+              <ManualPinButton postId={post.id} />
+            </div>
+          )}
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import Link from 'next/link'
 import TriggerButton from './TriggerButton'
 import PipelineActivity from './PipelineActivity'
+import PinterestStats from './PinterestStats'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,6 +137,26 @@ export default async function AdminPage() {
         >
           View published posts
         </Link>
+      </div>
+
+      {/* Pinterest stats */}
+      <div className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-medium flex items-center gap-2">
+            <span style={{ color: '#E60023' }}>📌</span> Pinterest
+          </h3>
+          {process.env.NEXT_PUBLIC_PINTEREST_USERNAME && (
+            <a
+              href={`https://pinterest.com/${process.env.NEXT_PUBLIC_PINTEREST_USERNAME}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:underline"
+            >
+              View profile →
+            </a>
+          )}
+        </div>
+        <PinterestStats />
       </div>
     </div>
   )

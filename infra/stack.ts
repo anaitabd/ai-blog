@@ -186,7 +186,61 @@ export class AiBlogStack extends cdk.Stack {
       .when(sfn.Condition.booleanEquals('$.shouldRetry', true), waitStep.next(generateStep))
       .otherwise(publishStep)
 
-    publishStep.next(successState)
+    // ─── Lambda: Pinterest Image Generator ─────────────────────────
+    const pinterestImageFn = new NodejsFunction(this, 'PinterestImageGen', {
+      functionName: 'ai-blog-pinterest-image',
+      entry: path.join(lambdaDir, 'pinterest-image-generator', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 256,
+      environment: sharedEnv,
+    })
+    pinterestImageFn.addToRolePolicy(bedrockPolicy)
+    pinterestImageFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject'],
+      resources: [`${imagesBucket.bucketArn}/*`],
+    }))
+
+    // ─── Lambda: Pinterest Publisher ───────────────────────────────
+    const pinterestPublisherFn = new NodejsFunction(this, 'PinterestPublisher', {
+      functionName: 'ai-blog-pinterest-publisher',
+      entry: path.join(lambdaDir, 'pinterest-publisher', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(2),
+      memorySize: 128,
+      environment: {
+        ...sharedEnv,
+        PINTEREST_ACCESS_TOKEN: process.env.PINTEREST_ACCESS_TOKEN ?? '',
+        PINTEREST_BOARD_INVESTING: process.env.PINTEREST_BOARD_INVESTING ?? '',
+        PINTEREST_BOARD_BUDGETING: process.env.PINTEREST_BOARD_BUDGETING ?? '',
+        PINTEREST_BOARD_DEBT: process.env.PINTEREST_BOARD_DEBT ?? '',
+        PINTEREST_BOARD_INCOME: process.env.PINTEREST_BOARD_INCOME ?? '',
+        PINTEREST_BOARD_GENERAL: process.env.PINTEREST_BOARD_GENERAL ?? '',
+        NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL ?? '',
+        WEBHOOK_SECRET: process.env.WEBHOOK_SECRET ?? '',
+      },
+    })
+
+    const pinterestImageStep = new tasks.LambdaInvoke(this, 'GeneratePinterestImage', {
+      lambdaFunction: pinterestImageFn,
+      outputPath: '$.Payload',
+    })
+
+    const pinterestPublishStep = new tasks.LambdaInvoke(this, 'PublishToPinterest', {
+      lambdaFunction: pinterestPublisherFn,
+      outputPath: '$.Payload',
+    })
+
+    // Chain: PublishContent → GeneratePinterestImage → PublishToPinterest → Success
+    publishStep
+      .next(pinterestImageStep)
+      .next(pinterestPublishStep)
+      .next(successState)
+
+    // Pinterest steps are non-blocking: failures fall through to success
+    pinterestImageStep.addCatch(successState, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+    pinterestPublishStep.addCatch(successState, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+
     generateStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
     publishStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
 
