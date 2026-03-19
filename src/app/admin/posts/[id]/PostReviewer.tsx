@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import ArticleBody from '@/components/ArticleBody'
 
@@ -21,6 +21,15 @@ interface Post {
   tags: { id: string; name: string }[]
 }
 
+interface YoutubeShort {
+  id:              string
+  youtubeVideoId:  string
+  youtubeVideoUrl: string
+  title:           string
+  caption:         string | null
+  publishedAt:     string
+}
+
 function SeoIndicator({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div className={`flex items-center gap-2 text-sm ${ok ? 'text-green-600' : 'text-red-500'}`}>
@@ -36,11 +45,22 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   const [saving,    setSaving]    = useState(false)
   const [improving, setImproving] = useState(false)
   const [improveMsg, setImproveMsg] = useState<string | null>(null)
-  const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'raw'>('preview')
+  const [tab, setTab] = useState<'preview' | 'edit' | 'seo' | 'raw' | 'youtube'>('preview')
   const [adminKey, setAdminKey] = useState('')
   const [post, setPost]       = useState(initial)
   const [confirm, setConfirm] = useState<'PUBLISHED' | 'REJECTED' | 'DELETE' | null>(null)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+
+  // ── YouTube Shorts state ──────────────────────────────────────────────────
+  const [ytShorts,       setYtShorts]       = useState<YoutubeShort[]>([])
+  const [ytLoaded,       setYtLoaded]       = useState(false)
+  const [ytGenerating,   setYtGenerating]   = useState(false)
+  const [ytExecutionArn, setYtExecutionArn] = useState<string | null>(null)
+  const [ytStatus,       setYtStatus]       = useState<'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | null>(null)
+  const [ytMsg,          setYtMsg]          = useState<string | null>(null)
+  const [ytStarted,      setYtStarted]      = useState<number | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const keyRef  = useRef('')
 
   const metaTitleOk  = post.metaTitle.length >= 50 && post.metaTitle.length <= 60
   const metaDescOk   = post.metaDesc.length  >= 145 && post.metaDesc.length  <= 158
@@ -109,6 +129,75 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
     } finally {
       setImproving(false)
     }
+  }
+
+  // ── YouTube helpers ───────────────────────────────────────────────────────
+  async function fetchShorts(key: string) {
+    const res = await fetch(`/api/admin/posts/${post.id}/youtube`, {
+      headers: { 'x-admin-key': key },
+    })
+    if (res.ok) {
+      const { shorts } = await res.json()
+      setYtShorts(shorts)
+      setYtLoaded(true)
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'youtube' && !ytLoaded && adminKey) fetchShorts(adminKey)
+  }, [tab, ytLoaded, adminKey])
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+
+  async function pollExecution(execArn: string) {
+    try {
+      const res  = await fetch(
+        `/api/admin/posts/${post.id}/youtube/generate?executionArn=${encodeURIComponent(execArn)}`,
+        { headers: { 'x-admin-key': keyRef.current } },
+      )
+      const data = await res.json()
+      setYtStatus(data.status)
+      if (data.status === 'SUCCEEDED') {
+        clearInterval(pollRef.current!)
+        setYtGenerating(false)
+        setYtMsg('✅ Shorts published to YouTube!')
+        fetchShorts(keyRef.current)
+      } else if (['FAILED', 'TIMED_OUT', 'ABORTED'].includes(data.status)) {
+        clearInterval(pollRef.current!)
+        setYtGenerating(false)
+        setYtMsg(`❌ Generation ${data.status.toLowerCase()}`)
+      }
+    } catch { /* keep polling */ }
+  }
+
+  async function generateShorts() {
+    const key = getKey()
+    if (!key) return
+    keyRef.current = key
+    setYtGenerating(true)
+    setYtMsg(null)
+    setYtStatus('RUNNING')
+    setYtStarted(Date.now())
+    try {
+      const res  = await fetch(`/api/admin/posts/${post.id}/youtube/generate`, {
+        method:  'POST',
+        headers: { 'x-admin-key': key, 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to start generation')
+      setYtExecutionArn(data.executionArn)
+      pollRef.current = setInterval(() => pollExecution(data.executionArn), 15_000)
+    } catch (err) {
+      setYtGenerating(false)
+      setYtStatus('FAILED')
+      setYtMsg(`❌ ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  function ytElapsed() {
+    if (!ytStarted) return ''
+    const s = Math.floor((Date.now() - ytStarted) / 1000)
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
   }
 
   async function updateStatus(status: 'PUBLISHED' | 'REJECTED') {
@@ -338,7 +427,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <div className="flex gap-1 border-b border-border">
-        {(['preview', 'edit', 'seo', 'raw'] as const).map((t) => (
+        {(['preview', 'edit', 'seo', 'raw', 'youtube'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -348,11 +437,14 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
                 : 'border-transparent text-muted hover:text-navy'
             }`}
           >
-            {t}
+            {t === 'youtube' ? '▶ YouTube' : t}
             {t === 'seo' && (
               <span className={`ml-2 text-xs font-bold ${seoScore >= 80 ? 'text-green-500' : seoScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
                 {seoScore}%
               </span>
+            )}
+            {t === 'youtube' && ytShorts.length > 0 && (
+              <span className="ml-1.5 text-xs font-bold text-red-500">{ytShorts.length}</span>
             )}
           </button>
         ))}
@@ -577,6 +669,103 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
         <pre className="bg-navy text-[#9FE1CB] rounded-2xl p-6 text-xs overflow-auto max-h-[600px] leading-relaxed">
           {post.content}
         </pre>
+      )}
+
+      {/* ── YouTube Shorts tab ───────────────────────────────── */}
+      {tab === 'youtube' && (
+        <div className="space-y-6 max-w-2xl">
+
+          {/* Generate button + status */}
+          <div className="bg-white rounded-2xl border border-border p-6 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h3 className="font-semibold text-[#1A1A2E]">YouTube Shorts</h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Generates 3 AI video scripts + Nova Reel videos, then publishes to your channel. Takes ~15–25 min.
+                </p>
+              </div>
+              <button
+                onClick={generateShorts}
+                disabled={ytGenerating}
+                className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors shrink-0"
+              >
+                {ytGenerating ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+                    </svg>
+                    Generating…
+                  </>
+                ) : (
+                  <>▶ Generate &amp; Publish Shorts</>
+                )}
+              </button>
+            </div>
+
+            {/* Progress / status banner */}
+            {ytStatus === 'RUNNING' && (
+              <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <svg className="w-4 h-4 animate-spin text-red-500 shrink-0" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-700">Generating videos with Nova Reel…</p>
+                  <p className="text-xs text-red-500 mt-0.5">Elapsed: {ytElapsed()} · polling every 15s</p>
+                </div>
+              </div>
+            )}
+            {ytMsg && (
+              <p className={`text-sm font-medium ${ytMsg.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                {ytMsg}
+              </p>
+            )}
+          </div>
+
+          {/* Published shorts list */}
+          {ytLoaded && ytShorts.length === 0 && !ytGenerating && (
+            <div className="bg-white rounded-2xl border border-border px-6 py-10 text-center">
+              <p className="text-4xl mb-3">▶</p>
+              <p className="text-sm font-medium text-[#1A1A2E]">No YouTube Shorts yet</p>
+              <p className="text-xs text-muted mt-1">Click "Generate &amp; Publish Shorts" to create 3 short-form videos from this article.</p>
+            </div>
+          )}
+
+          {ytShorts.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted uppercase tracking-widest font-semibold">
+                {ytShorts.length} Short{ytShorts.length > 1 ? 's' : ''} Published
+              </p>
+              {ytShorts.map((s, i) => (
+                <div key={s.id} className="bg-white rounded-2xl border border-border p-5 flex items-start gap-4">
+                  {/* Thumbnail placeholder */}
+                  <div className="w-16 h-28 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0 text-2xl">
+                    ▶
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-muted uppercase tracking-widest mb-1">Short #{i + 1}</p>
+                    <p className="font-medium text-sm text-[#1A1A2E] mb-1 truncate">{s.title}</p>
+                    {s.caption && (
+                      <p className="text-xs text-muted line-clamp-2 mb-2">{s.caption}</p>
+                    )}
+                    <a
+                      href={s.youtubeVideoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium"
+                    >
+                      Watch on YouTube →
+                    </a>
+                    <p className="text-xs text-muted mt-1">
+                      Published {new Date(s.publishedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

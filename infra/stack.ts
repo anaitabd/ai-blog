@@ -348,6 +348,30 @@ export class AiBlogStack extends cdk.Stack {
       targets: [new targets.LambdaFunction(pickerFn)],
     })
 
+    // ─── YouTube On-Demand State Machine ───────────────────
+    // Separate machine so admin can trigger Shorts for any published post
+    // without running the full content pipeline.
+    const ytOdGenerate = new tasks.LambdaInvoke(this, 'YtOdGenerate', {
+      lambdaFunction: youtubeGeneratorFn,
+      outputPath: '$.Payload',
+    })
+    const ytOdPublish = new tasks.LambdaInvoke(this, 'YtOdPublish', {
+      lambdaFunction: youtubePublisherFn,
+      outputPath: '$.Payload',
+    })
+    ytOdGenerate.addCatch(new sfn.Fail(this, 'YtOdFailed', {
+      error: 'YoutubeFailed', cause: 'YouTube generation or publish failed',
+    }), { errors: ['States.ALL'], resultPath: '$.error' })
+    ytOdPublish.addCatch(new sfn.Fail(this, 'YtOdPublishFailed', {
+      error: 'YoutubePublishFailed', cause: 'YouTube publish failed',
+    }), { errors: ['States.ALL'], resultPath: '$.error' })
+
+    const youtubeOnDemandMachine = new sfn.StateMachine(this, 'YoutubeOnDemandMachine', {
+      stateMachineName: 'ai-blog-youtube-on-demand',
+      definitionBody: sfn.DefinitionBody.fromChainable(ytOdGenerate.next(ytOdPublish)),
+      timeout: cdk.Duration.minutes(30),
+    })
+
     // ─── Outputs ────────────────────────────────────────────
     new cdk.CfnOutput(this, 'ImagesCdnUrl', {
       value: `https://${imagesCdn.distributionDomainName}`,
@@ -355,6 +379,7 @@ export class AiBlogStack extends cdk.Stack {
     })
     new cdk.CfnOutput(this, 'TopicsTableName', { value: topicsTable.tableName })
     new cdk.CfnOutput(this, 'StateMachineArn', { value: stateMachine.stateMachineArn })
+    new cdk.CfnOutput(this, 'YoutubeOnDemandArn', { value: youtubeOnDemandMachine.stateMachineArn })
     new cdk.CfnOutput(this, 'ImagesBucketName', { value: imagesBucket.bucketName })
     new cdk.CfnOutput(this, 'YoutubeGeneratorDLQUrl',  { value: ytGeneratorDlq.queueUrl })
     new cdk.CfnOutput(this, 'YoutubePublisherDLQUrl',  { value: ytPublisherDlq.queueUrl })
