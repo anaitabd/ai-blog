@@ -416,7 +416,7 @@ function buildNarrationSSML(script: string): string {
 
   return (
     '<speak>' +
-      '<prosody rate="95%" pitch="+2%">' +
+      '<prosody rate="95%">' +        // pitch not supported by Polly Neural voices
         `<p>${escaped}</p>` +
       '</prosody>' +
     '</speak>'
