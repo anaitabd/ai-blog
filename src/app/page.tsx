@@ -17,7 +17,7 @@ interface Props {
 export default async function HomePage({ searchParams }: Props) {
   const categoryFilter = searchParams.category
 
-  const [posts, featuredPost] = await Promise.all([
+  const [posts, featuredPost, subscriberCount] = await Promise.all([
     prisma.post.findMany({
       where: {
         status: 'PUBLISHED',
@@ -32,7 +32,15 @@ export default async function HomePage({ searchParams }: Props) {
       orderBy: { publishedAt: 'desc' },
       include: { category: true },
     }),
+    prisma.subscriber.count({ where: { active: true } }),
   ])
+
+  const displayCount =
+    subscriberCount >= 1000
+      ? `${(subscriberCount / 1000).toFixed(1)}K+`
+      : subscriberCount > 0
+      ? `${subscriberCount}+`
+      : null
 
   return (
     <>
@@ -90,7 +98,11 @@ export default async function HomePage({ searchParams }: Props) {
               {/* Stats bar */}
               <div className="absolute bottom-4 left-4 right-4 bg-navy/80 backdrop-blur-sm rounded-xl px-4 py-3 flex gap-6 text-xs text-white/70">
                 <span>📖 Daily readers</span>
-                <span>📧 48K subscribers</span>
+                {displayCount ? (
+                  <span>📧 {displayCount} subscribers</span>
+                ) : (
+                  <span>📧 Join our community</span>
+                )}
                 <span>⭐ Expert reviewed</span>
               </div>
             </div>

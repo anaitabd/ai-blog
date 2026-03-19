@@ -2,7 +2,11 @@
 
 import { useState } from 'react'
 
-export default function NewsletterInline() {
+interface Props {
+  subscriberCount?: string | null  // e.g. "2.4K+" or "127+" — null → hide count
+}
+
+export default function NewsletterInline({ subscriberCount }: Props) {
   const [name, setName]       = useState('')
   const [email, setEmail]     = useState('')
   const [status, setStatus]   = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
@@ -23,6 +27,10 @@ export default function NewsletterInline() {
     }
   }
 
+  const subLine = subscriberCount
+    ? `Join ${subscriberCount} readers getting practical, jargon-free money tips every Tuesday.`
+    : 'Get practical, jargon-free money tips every Tuesday.'
+
   return (
     <section
       id="newsletter"
@@ -39,9 +47,7 @@ export default function NewsletterInline() {
         <h2 className="font-serif text-3xl font-bold italic text-white mb-3 leading-snug">
           Get smarter about money every week
         </h2>
-        <p className="text-white/60 text-sm mb-6">
-          Join 48,000+ beginners getting practical, jargon-free money tips every Tuesday.
-        </p>
+        <p className="text-white/60 text-sm mb-6">{subLine}</p>
 
         {status === 'success' ? (
           <div className="bg-gold/20 border border-gold/40 rounded-xl px-6 py-5 text-gold font-semibold">
@@ -77,7 +83,6 @@ export default function NewsletterInline() {
           </form>
         )}
 
-        {/* Benefits */}
         <ul className="mt-6 flex flex-col gap-1.5 text-sm text-white/60 text-left max-w-xs mx-auto">
           {['Weekly actionable tips', 'No fluff, no spam, unsubscribe anytime', 'Free tools & templates included'].map(b => (
             <li key={b} className="flex items-center gap-2">
@@ -86,7 +91,9 @@ export default function NewsletterInline() {
           ))}
         </ul>
 
-        <p className="mt-5 text-xs text-white/30">48,000+ subscribers · Sent every Tuesday</p>
+        {subscriberCount && (
+          <p className="mt-5 text-xs text-white/30">{subscriberCount} subscribers · Sent every Tuesday</p>
+        )}
       </div>
     </section>
   )

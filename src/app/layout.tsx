@@ -4,18 +4,40 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import './globals.css'
 
+const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? 'WealthBeginners'
+const SITE_URL  = process.env.NEXT_PUBLIC_SITE_URL  ?? 'https://www.wealthbeginners.com'
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: process.env.NEXT_PUBLIC_SITE_NAME!,
-    template: `%s | ${process.env.NEXT_PUBLIC_SITE_NAME}`,
+    default:  `${SITE_NAME} — Personal Finance for Beginners`,
+    template: `%s | ${SITE_NAME}`,
   },
-  description: 'Practical guides, tips, and insights updated daily.',
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
-  ),
+  description:
+    'Practical personal finance guides for beginners. Investing, budgeting, credit scores, debt payoff, and building wealth from zero.',
+  keywords: [
+    'personal finance', 'investing for beginners', 'budgeting tips',
+    'credit score improvement', 'debt payoff', 'build wealth',
+    'financial freedom for beginners', 'how to save money',
+  ],
+  authors: [{ name: 'WealthBeginners Editorial Team' }],
   openGraph: {
-    type: 'website',
-    siteName: process.env.NEXT_PUBLIC_SITE_NAME,
+    siteName: SITE_NAME,
+    locale:   'en_US',
+    type:     'website',
+    images:   [{ url: '/brand/og-default.jpg', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    site: '@wealthbeginners',
+  },
+  robots: {
+    index:     true,
+    follow:    true,
+    googleBot: { index: true, follow: true },
+  },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION ?? '',
   },
 }
 

@@ -31,6 +31,12 @@ model Post {
   pinterestPinUrl    String?
   pinterestImage     String?
   pinterestPinnedAt  DateTime?
+  // SEO & image fields
+  primaryKeyword     String?
+  faqSchema          String?   @db.Text
+  ogTitle            String?
+  ogDescription      String?
+  imageSource        String?   // 'pexels' | 'bedrock' | 'unsplash' | 'default'
   publishedAt        DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt

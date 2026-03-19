@@ -9,7 +9,10 @@ import AdUnit from '@/components/AdUnit'
 import NewsletterInline from '@/components/NewsletterInline'
 import TrendingWidget from '@/components/TrendingWidget'
 import CompoundCalculator from '@/components/CompoundCalculator'
-import ArticleCard from '@/components/ArticleCard'
+import AffiliateBox from '@/components/AffiliateBox'
+import AuthorBio from '@/components/AuthorBio'
+import RelatedPosts from '@/components/RelatedPosts'
+import { sanitizePostContent } from '@/lib/content-sanitizer'
 
 interface Props {
   params: { slug: string }
@@ -31,18 +34,30 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   })
   if (!post) return {}
 
+  const title       = post.ogTitle       || post.metaTitle
+  const description = post.ogDescription || post.metaDesc
+  const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.wealthbeginners.com'
+
   return {
-    title: post.metaTitle,
-    description: post.metaDesc,
-    alternates: {
-      canonical: `${process.env.NEXT_PUBLIC_SITE_URL}/${post.slug}`,
-    },
+    title,
+    description,
+    authors: [{ name: 'WealthBeginners Editorial Team' }],
+    alternates: { canonical: `${siteUrl}/${post.slug}` },
     openGraph: {
-      title: post.metaTitle,
-      description: post.metaDesc,
-      type: 'article',
+      title,
+      description,
+      type:          'article',
       publishedTime: post.publishedAt?.toISOString(),
-      images: post.featuredImage ? [post.featuredImage] : [],
+      authors:       [`${siteUrl}/about`],
+      images: post.featuredImage
+        ? [{ url: post.featuredImage, width: 1200, height: 630, alt: post.title }]
+        : [],
+    },
+    twitter: {
+      card:        'summary_large_image',
+      title:       post.ogTitle || post.metaTitle,
+      description: post.ogDescription || post.metaDesc,
+      images:      post.featuredImage ? [post.featuredImage] : [],
     },
   }
 }
@@ -55,32 +70,45 @@ export default async function ArticlePage({ params }: Props) {
 
   if (!post) notFound()
 
+  // Sanitize content at render time (catches any DB entries that weren't cleaned at write time)
+  const cleanContent = sanitizePostContent(post.content)
+
   // Increment view count (fire-and-forget)
-  prisma.post.update({
-    where: { id: post.id },
-    data: { viewCount: { increment: 1 } },
-  }).catch(() => {/* non-critical */})
+  prisma.post
+    .update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } })
+    .catch(() => {/* non-critical */})
 
-  const relatedPosts = await prisma.post.findMany({
-    where: {
-      status: 'PUBLISHED',
-      categoryId: post.categoryId,
-      id: { not: post.id },
-    },
-    take: 3,
-    orderBy: { publishedAt: 'desc' },
-    include: { category: true },
-  })
+  const subscriberCount = await prisma.subscriber
+    .count({ where: { active: true } })
+    .catch(() => 0)
+  const displayCount =
+    subscriberCount >= 1000
+      ? `${(subscriberCount / 1000).toFixed(1)}K+`
+      : subscriberCount > 0
+      ? `${subscriberCount}+`
+      : null
 
-  const wordCount = post.wordCount || post.content.trim().split(/\s+/).length
-  const headings  = extractHeadings(post.content)
+  const wordCount = post.wordCount || cleanContent.trim().split(/\s+/).length
+  const headings  = extractHeadings(cleanContent)
+
+  // Parse schemas
+  const articleSchema = post.schemaJson ? (() => { try { return JSON.parse(post.schemaJson) } catch { return null } })() : null
+  const faqSchema     = post.faqSchema  ? (() => { try { return JSON.parse(post.faqSchema)  } catch { return null } })() : null
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      {post.schemaJson && (
+      {/* JSON-LD: Article schema */}
+      {articleSchema && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: post.schemaJson }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
+        />
+      )}
+      {/* JSON-LD: FAQ schema */}
+      {faqSchema && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
         />
       )}
 
@@ -126,7 +154,7 @@ export default async function ArticlePage({ params }: Props) {
             <h1 className="font-serif text-4xl font-bold text-[#1A1A2E] leading-tight mb-4">
               {post.title}
             </h1>
-            <p className="text-lg text-muted leading-relaxed">{post.excerpt}</p>
+            <p className="text-lg text-muted leading-relaxed italic">{post.excerpt}</p>
 
             {/* Author bar */}
             <div className="flex items-center gap-3 mt-5 pt-5 border-t border-border">
@@ -135,7 +163,7 @@ export default async function ArticlePage({ params }: Props) {
               </div>
               <div>
                 <p className="text-sm font-semibold text-[#1A1A2E]">WealthBeginners Editorial</p>
-                <p className="text-xs text-muted">Personal finance experts</p>
+                <p className="text-xs text-muted">Expert Reviewed ✓</p>
               </div>
             </div>
           </header>
@@ -149,47 +177,50 @@ export default async function ArticlePage({ params }: Props) {
           )}
 
           <AdUnit slot="top-article" />
-
-          {/* Table of Contents — inline on mobile, hidden on desktop (sidebar takes over) */}
           <TableOfContents headings={headings} mobileInline />
 
-          <ArticleBody content={post.content} />
+          {/* First affiliate box — above content for high visibility */}
+          <AffiliateBox category={post.category.slug} />
+
+          <ArticleBody content={cleanContent} />
+
+          {/* Second affiliate box — after content */}
+          <AffiliateBox category={post.category.slug} />
 
           {/* Tags */}
           {post.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-border">
               {post.tags.map((tag) => (
-                <span
+                <Link
                   key={tag.id}
-                  className="bg-cream-2 text-muted text-xs px-3 py-1.5 rounded-full border border-border"
+                  href={`/search?q=${encodeURIComponent(tag.name)}`}
+                  className="bg-cream-2 text-muted text-xs px-3 py-1.5 rounded-full border border-border hover:bg-gold/10 hover:text-gold transition-colors"
                 >
                   {tag.name}
-                </span>
+                </Link>
               ))}
             </div>
           )}
 
           <AdUnit slot="bottom-article" />
-          <NewsletterInline />
 
-          {/* Related articles */}
-          {relatedPosts.length > 0 && (
-            <section className="mt-12">
-              <h2 className="font-serif text-2xl font-bold text-[#1A1A2E] mb-6">Related Articles</h2>
-              <div className="grid sm:grid-cols-3 gap-4">
-                {relatedPosts.map((related) => (
-                  <ArticleCard key={related.id} post={related} />
-                ))}
-              </div>
-            </section>
-          )}
+          {/* Author bio */}
+          <AuthorBio />
+
+          {/* Related posts */}
+          <RelatedPosts currentPostId={post.id} category={post.category.slug} />
+
+          <AdUnit slot="post-footer" format="horizontal" />
+          <NewsletterInline subscriberCount={displayCount} />
         </article>
 
         {/* Sticky sidebar */}
         <aside className="hidden lg:block space-y-8">
           <div className="sticky top-24">
-            {/* Table of Contents — desktop sidebar */}
             <TableOfContents headings={headings} />
+            <div className="mt-6">
+              <AffiliateBox category={post.category.slug} />
+            </div>
             <TrendingWidget />
             <div className="mt-8">
               <CompoundCalculator />

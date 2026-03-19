@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { runQualityGate, calcReadingTime } from '@/lib/quality-gate'
+import { sanitizePostContent } from '@/lib/content-sanitizer'
+import { fetchPexelsImage, fetchUnsplashImage, uploadImageToS3 } from '@/lib/image-service'
+import { analyzeSEO, enhancePostContent } from '@/lib/claude-seo-engine'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
@@ -16,6 +19,14 @@ const PublishSchema = z.object({
   tags: z.array(z.string()).min(1).max(10),
   featuredImage: z.string().url().optional(),
   schemaJson: z.string().optional(),
+  // Extended SEO fields from pipeline
+  ogTitle: z.string().optional(),
+  ogDescription: z.string().optional(),
+  primaryKeyword: z.string().optional(),
+  faqSchema: z.string().optional(),
+  imageSource: z.string().optional(),
+  wordCount: z.number().optional(),
+  readingTime: z.number().optional(),
 })
 
 function titleToSlug(title: string): string {
@@ -48,12 +59,29 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { secret, categoryName, tags, slug: rawSlug, ...data } = parsed.data
+    const {
+      secret,
+      categoryName,
+      tags,
+      slug: rawSlug,
+      ogTitle: incomingOgTitle,
+      ogDescription: incomingOgDescription,
+      primaryKeyword: incomingPrimaryKeyword,
+      faqSchema: incomingFaqSchema,
+      imageSource: incomingImageSource,
+      wordCount: incomingWordCount,
+      readingTime: incomingReadingTime,
+      ...data
+    } = parsed.data
 
     if (secret !== process.env.WEBHOOK_SECRET) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // ── Step 1: Sanitize placeholder text ──────────────────────────────
+    data.content = sanitizePostContent(data.content)
+
+    // ── Step 2: Quality gate ────────────────────────────────────────────
     const quality = runQualityGate(data.content)
     if (!quality.passed) {
       return NextResponse.json(
@@ -62,17 +90,86 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Generate + deduplicate slug
-    const slugBase = rawSlug ?? titleToSlug(data.title)
+    // ── Step 3: Image — try Pexels first, fall back to lambda's image ───
+    let finalImage = data.featuredImage
+    let finalImageSource = incomingImageSource ?? 'bedrock'
+
+    if (process.env.PEXELS_API_KEY) {
+      try {
+        const pexelsUrl = await fetchPexelsImage(data.title)
+        if (pexelsUrl) {
+          const s3Url = await uploadImageToS3(pexelsUrl, data.title)
+          finalImage = s3Url
+          finalImageSource = 'pexels'
+        }
+      } catch {
+        // Pexels failed — use lambda-provided image or try Unsplash
+        if (!finalImage && process.env.UNSPLASH_ACCESS_KEY) {
+          try {
+            const unsplashUrl = await fetchUnsplashImage(data.title)
+            if (unsplashUrl) {
+              const s3Url = await uploadImageToS3(unsplashUrl, data.title)
+              finalImage = s3Url
+              finalImageSource = 'unsplash'
+            }
+          } catch { /* keep lambda image */ }
+        }
+      }
+    }
+
+    // ── Step 4: Claude SEO analysis (if Anthropic key is set) ──────────
+    let seoFields: {
+      ogTitle?: string
+      ogDescription?: string
+      primaryKeyword?: string
+      schemaJson?: string
+      faqSchema?: string
+      metaTitle?: string
+      metaDesc?: string
+    } = {
+      ogTitle: incomingOgTitle,
+      ogDescription: incomingOgDescription,
+      primaryKeyword: incomingPrimaryKeyword,
+      faqSchema: incomingFaqSchema,
+    }
+
+    if (process.env.ANTHROPIC_API_KEY && !incomingOgTitle) {
+      try {
+        const seoAnalysis = await analyzeSEO(data.title, data.content, categoryName)
+        // Enhance content with SEO improvements
+        const enhanced = await enhancePostContent(data.title, data.content, seoAnalysis)
+        data.content = sanitizePostContent(enhanced) // re-sanitize after enhancement
+
+        seoFields = {
+          ogTitle: seoAnalysis.ogTitle || data.title,
+          ogDescription: seoAnalysis.ogDescription || data.metaDesc,
+          primaryKeyword: seoAnalysis.primaryKeyword,
+          schemaJson: JSON.stringify(seoAnalysis.schemaMarkup),
+          faqSchema: JSON.stringify(seoAnalysis.faqSchema),
+          metaTitle: seoAnalysis.optimizedTitle?.slice(0, 70) || data.metaTitle,
+          metaDesc: seoAnalysis.metaDescription?.slice(0, 170) || data.metaDesc,
+        }
+        // Update slug if SEO recommends a better one
+        if (seoAnalysis.recommendedSlug && !rawSlug) {
+          data.title = seoAnalysis.optimizedTitle || data.title
+        }
+      } catch (seoErr) {
+        console.warn('SEO analysis failed, continuing without:', seoErr)
+      }
+    }
+
+    // ── Step 5: Slug + category + tags ─────────────────────────────────
+    const slugBase = rawSlug ?? titleToSlug(seoFields.metaTitle ?? data.title)
     const slug     = await uniqueSlug(slugBase)
 
     const categorySlug = categoryName
       .toLowerCase()
-      .replaceAll(/[^a-z0-9\s-]/g, '') // strip special chars (parens, etc.)
+      .replace(/[^a-z0-9\s-]/g, '')
       .trim()
-      .replaceAll(/\s+/g, '-')         // spaces → hyphens
-      .replaceAll(/-{2,}/g, '-')       // collapse consecutive hyphens
-      .replace(/^-+|-+$/g, '')         // trim leading / trailing hyphens
+      .replace(/\s+/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^-+|-+$/g, '')
+
     const category = await prisma.category.upsert({
       where: { slug: categorySlug },
       update: {},
@@ -81,7 +178,7 @@ export async function POST(req: NextRequest) {
 
     const tagRecords = await Promise.all(
       tags.map((tag) => {
-        const tagSlug = tag.toLowerCase().replaceAll(/\s+/g, '-')
+        const tagSlug = tag.toLowerCase().replace(/\s+/g, '-')
         return prisma.tag.upsert({
           where: { slug: tagSlug },
           update: {},
@@ -90,23 +187,37 @@ export async function POST(req: NextRequest) {
       })
     )
 
-    const wordCount   = quality.wordCount
-    const readingTime = calcReadingTime(wordCount)
+    const wordCount   = incomingWordCount  ?? quality.wordCount
+    const readingTime = incomingReadingTime ?? calcReadingTime(wordCount)
 
+    // ── Step 6: Save to DB as PUBLISHED ────────────────────────────────
     const post = await prisma.post.create({
       data: {
-        ...data,
+        title:        data.title,
         slug,
-        categoryId: category.id,
-        tags: { connect: tagRecords.map((t) => ({ id: t.id })) },
+        excerpt:      data.excerpt,
+        content:      data.content,
+        featuredImage: finalImage,
+        metaTitle:    seoFields.metaTitle  ?? data.metaTitle,
+        metaDesc:     seoFields.metaDesc   ?? data.metaDesc,
+        schemaJson:   seoFields.schemaJson ?? data.schemaJson,
+        ogTitle:      seoFields.ogTitle,
+        ogDescription: seoFields.ogDescription,
+        primaryKeyword: seoFields.primaryKeyword,
+        faqSchema:    seoFields.faqSchema,
+        imageSource:  finalImageSource,
+        categoryId:   category.id,
+        tags:         { connect: tagRecords.map((t) => ({ id: t.id })) },
         wordCount,
         readingTime,
-        status: 'REVIEW',
+        status:       'PUBLISHED',
+        publishedAt:  new Date(),
       },
       include: { category: true, tags: true },
     })
 
     revalidatePath('/')
+    revalidatePath('/blog')
     revalidatePath('/sitemap.xml')
     revalidatePath(`/category/${category.slug}`)
     revalidatePath(`/${post.slug}`)

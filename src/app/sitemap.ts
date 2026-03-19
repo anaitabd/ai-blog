@@ -14,11 +14,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   })
 
   return [
-    { url: base, priority: 1.0, changeFrequency: 'daily' },
-    { url: `${base}/about`, priority: 0.6, changeFrequency: 'monthly' },
-    { url: `${base}/contact`, priority: 0.5, changeFrequency: 'monthly' },
-    { url: `${base}/privacy-policy`, priority: 0.3, changeFrequency: 'monthly' },
-    { url: `${base}/disclaimer`, priority: 0.3, changeFrequency: 'monthly' },
+    { url: base, priority: 1.0, changeFrequency: 'daily' as const },
+    { url: `${base}/blog`,          priority: 0.9, changeFrequency: 'daily' as const },
+    { url: `${base}/tools`,         priority: 0.8, changeFrequency: 'monthly' as const },
+    { url: `${base}/about`,         priority: 0.7, changeFrequency: 'monthly' as const },
+    { url: `${base}/contact`,       priority: 0.5, changeFrequency: 'monthly' as const },
+    { url: `${base}/privacy-policy`, priority: 0.3, changeFrequency: 'monthly' as const },
+    { url: `${base}/disclaimer`,    priority: 0.3, changeFrequency: 'monthly' as const },
     ...categories.map((cat) => ({
       url: `${base}/category/${cat.slug}`,
       lastModified: cat.createdAt,

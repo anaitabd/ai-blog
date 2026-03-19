@@ -30,8 +30,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function CategoryPage({ params }: Readonly<Props>) {
-  const category = await prisma.category.findUnique({
-    where: { slug: params.name },
+  // Normalize slug to lowercase so /category/Investing still works
+  const slug = params.name.toLowerCase()
+
+  const category = await prisma.category.findFirst({
+    where: { slug: { equals: slug, mode: 'insensitive' } },
   })
   if (!category) notFound()
 

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { prisma } from '@/lib/prisma'
+import NewsletterInline from '@/components/NewsletterInline'
 
 export const metadata: Metadata = {
   title: 'About WealthBeginners — Our Mission',
@@ -25,7 +27,25 @@ const PILLARS = [
   },
 ]
 
-export default function AboutPage() {
+const TOPICS = [
+  { icon: '📈', title: 'Investing',    body: 'Stock market basics, ETFs, index funds — how to grow wealth for the long term.', href: '/category/investing' },
+  { icon: '💰', title: 'Budgeting',    body: '50/30/20 rule, spending trackers, zero-based budgeting — take control of every dollar.', href: '/category/budgeting' },
+  { icon: '💳', title: 'Credit',       body: 'Score improvement, card strategy, credit building from scratch — even with bad credit.', href: '/category/credit' },
+  { icon: '🏠', title: 'Real Estate',  body: 'Buying vs renting, mortgages, REITs — real estate as a wealth-building tool.', href: '/category/real-estate' },
+  { icon: '📊', title: 'Retirement',   body: '401(k), Roth IRA, compound interest — building a retirement that lasts.', href: '/category/retirement' },
+  { icon: '💼', title: 'Side Income',  body: 'Freelancing, passive income, online business — adding income streams that work for you.', href: '/category/income' },
+]
+
+export default async function AboutPage() {
+  const subscriberCount = await prisma.subscriber
+    .count({ where: { active: true } })
+    .catch(() => 0)
+  const displayCount =
+    subscriberCount >= 1000
+      ? `${(subscriberCount / 1000).toFixed(1)}K+`
+      : subscriberCount > 0
+      ? `${subscriberCount}+`
+      : null
   return (
     <main>
       {/* Hero */}
@@ -113,7 +133,7 @@ export default function AboutPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
-              href="/"
+              href="/blog"
               className="bg-navy text-white px-6 py-3 rounded-full font-semibold text-sm hover:bg-navy/90 transition-colors"
             >
               Browse Articles
@@ -126,6 +146,32 @@ export default function AboutPage() {
             </Link>
           </div>
         </section>
+
+        {/* What We Cover */}
+        <section>
+          <h2 className="font-display text-2xl font-bold text-navy mb-2">What We Cover</h2>
+          <p className="text-muted mb-8">Everything a beginner needs to build real wealth</p>
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {TOPICS.map((t) => (
+              <Link
+                key={t.title}
+                href={t.href}
+                className="group bg-navy rounded-2xl p-5 border border-white/10 hover:border-gold/40 transition-colors"
+              >
+                <span className="text-3xl block mb-3">{t.icon}</span>
+                <h3 className="font-display font-bold text-white mb-2 group-hover:text-gold transition-colors">
+                  {t.title}
+                </h3>
+                <p className="text-white/50 text-sm leading-relaxed">{t.body}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {/* Newsletter */}
+      <div className="max-w-3xl mx-auto px-4 pb-14">
+        <NewsletterInline subscriberCount={displayCount} />
       </div>
     </main>
   )
