@@ -106,13 +106,6 @@ export const handler = async (event: PublisherEvent) => {
 
       // Clean up /tmp to avoid storage exhaustion
       try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
-
-      // 30 second delay between uploads to respect YouTube rate limits
-      if (i < videoUrls.length - 1) {
-        log({ lambda: 'youtube-shorts-publisher', step: 'rate-limit-delay', status: 'start',
-          pct: pct + 20, meta: { nextIn: '30s' } })
-        await sleep(30_000)
-      }
     } catch (err) {
       log({ lambda: 'youtube-shorts-publisher', step: 'upload-error', status: 'error', pct,
         meta: { index: i + 1, error: String(err) } })
@@ -294,7 +287,8 @@ async function notifyNextJs(
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-function buildYouTubeTitle(postTitle: string, index: number): string {
+function buildYouTubeTitle(postTitle: string, _index: number): string {
+  // Single combined Short per post — no index suffix needed
   const base = `${postTitle} #Shorts`
   return base.length <= 100 ? base : `${base.slice(0, 97)}…`
 }
@@ -311,7 +305,4 @@ function buildYouTubeDescription(script: ReelScript, postUrl: string): string {
   ].join('\n')
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 

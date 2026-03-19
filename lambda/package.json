@@ -8,9 +8,10 @@
     "trigger": "aws lambda invoke --function-name ai-blog-topic-picker --payload '{}' /dev/stdout"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.600.0",
     "@aws-sdk/client-bedrock-agent-runtime": "^3.600.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.600.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-polly": "^3.1012.0",
     "@aws-sdk/client-s3": "^3.600.0",
     "@aws-sdk/client-ses": "^3.600.0",
     "@aws-sdk/client-sfn": "^3.600.0",

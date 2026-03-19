@@ -1,10 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  YouTube Shorts Generator
-//  1. Calls Bedrock Claude to generate 3 short video scripts from the blog post
-//  2. Calls Amazon Nova Reel (StartAsyncInvoke) for each script
-//  3. Polls until SUCCEEDED (max 12 minutes)
-//  4. Uploads the resulting .mp4 to S3 under youtube-shorts/{postId}/
-//  Lambda timeout: 14 minutes   Memory: 1024 MB
+//  YouTube Shorts Generator — Pro Quality
+//  1. Claude generates a 3-scene script (hook / body / cta) with scene-specific
+//     cinematic visual prompts for each scene
+//  2. Amazon Nova Reel renders one 6-second 1280×720 clip per scene
+//  3. FFmpeg converts each landscape clip → 720×1280 portrait (blur-bars)
+//  4. AWS Polly Neural TTS (Stephen, en-US) narrates the full script (SSML)
+//  5. FFmpeg: concat vertical clips → loop video → mux audio → final.mp4
+//  6. Uploads the single broadcast-quality .mp4 to S3
+//  Lambda timeout: 15 minutes   Memory: 3008 MB   /tmp: 4096 MB
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -19,18 +22,24 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3'
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
+import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
+import { execFileSync } from 'child_process'
+import * as fs from 'fs'
 import { log } from '../shared/logger'
 
 // ─── AWS clients ──────────────────────────────────────────────────────────────
 const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 const s3      = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' })
 const ssm     = new SSMClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const polly   = new PollyClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const NOVA_REEL_MODEL   = 'amazon.nova-reel-v1:0'
-const CLAUDE_MODEL      = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
-const POLL_INTERVAL_MS  = 15_000   // 15 seconds
-const MAX_POLL_MS       = 12 * 60 * 1000 // 12 minutes
+const NOVA_REEL_MODEL  = 'amazon.nova-reel-v1:0'
+const CLAUDE_MODEL     = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+const POLL_INTERVAL_MS = 15_000
+const MAX_POLL_MS      = 13 * 60 * 1000   // 13 min (Lambda budget = 15 min)
+const FFMPEG           = process.env.FFMPEG_PATH ?? '/opt/bin/ffmpeg'
+const SCENE_COUNT      = 3
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface GeneratorEvent {
@@ -41,17 +50,18 @@ interface GeneratorEvent {
   excerpt:  string
 }
 
+interface SceneScript {
+  scene:        'hook' | 'body' | 'cta'
+  narration:    string
+  visualPrompt: string
+}
+
 interface ReelScript {
   hook:       string
   body:       string
   cta:        string
   fullScript: string
-}
-
-// ─── SSM helper ──────────────────────────────────────────────────────────────
-async function getParam(name: string): Promise<string> {
-  const res = await ssm.send(new GetParameterCommand({ Name: name, WithDecryption: true }))
-  return res.Parameter?.Value ?? ''
+  scenes:     SceneScript[]
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -64,58 +74,110 @@ export const handler = async (event: GeneratorEvent) => {
   const s3Bucket = process.env.S3_BUCKET!
 
   try {
-    // ── Step 1: Generate 3 scripts via Claude ────────────────────────────────
+    // ── Step 1: Generate scene scripts + cinematic prompts via Claude ─────
     log({ lambda: 'youtube-shorts-generator', step: 'script-generation', status: 'start', pct: 5,
       meta: { postId } })
 
-    const scripts = await generateScripts(title, content)
+    const script = await generateScript(title, content)
 
-    log({ lambda: 'youtube-shorts-generator', step: 'script-generation', status: 'complete', pct: 15,
-      meta: { count: scripts.length } })
+    log({ lambda: 'youtube-shorts-generator', step: 'script-generation', status: 'complete', pct: 10,
+      meta: { preview: script.fullScript.slice(0, 80) } })
 
-    // ── Step 2: Generate videos via Nova Reel (parallel start, serial poll) ──
-    const videoResults: Array<{ s3Url: string; script: ReelScript }> = []
+    // ── Step 2: Render each scene with Nova Reel (serial) ─────────────────
+    const rawClipPaths: string[] = []
 
-    for (let i = 0; i < scripts.length; i++) {
-      const script = scripts[i]
-      const outputPrefix = `youtube-shorts/${postId}/reel-${i + 1}`
+    for (let i = 0; i < script.scenes.length; i++) {
+      const scene        = script.scenes[i]
+      const outputPrefix = `youtube-shorts/${postId}/raw-scene-${i + 1}`
+      const pct          = 10 + i * 15
 
-      log({ lambda: 'youtube-shorts-generator', step: 'nova-reel-start', status: 'start', pct: 15 + i * 20,
-        meta: { reelIndex: i + 1, hook: script.hook.slice(0, 60) } })
+      log({ lambda: 'youtube-shorts-generator', step: 'nova-reel-start', status: 'start', pct,
+        meta: { scene: scene.scene, index: i + 1 } })
 
-      // Start async Nova Reel job
-      const invocationArn = await startNovaReelJob(script.fullScript, s3Bucket, outputPrefix)
-
-      log({ lambda: 'youtube-shorts-generator', step: 'nova-reel-polling', status: 'start', pct: 20 + i * 20,
-        meta: { reelIndex: i + 1, invocationArn } })
-
-      // Poll until complete
-      const outputS3Uri = await pollUntilComplete(invocationArn)
+      const invocationArn = await startNovaReelJob(scene.visualPrompt, s3Bucket, outputPrefix)
+      const outputS3Uri   = await pollUntilComplete(invocationArn)
 
       log({ lambda: 'youtube-shorts-generator', step: 'nova-reel-complete', status: 'complete',
-        pct: 30 + i * 20, meta: { reelIndex: i + 1, outputS3Uri } })
+        pct: pct + 10, meta: { scene: scene.scene, outputS3Uri } })
 
-      // Copy from Nova Reel output path → our organised path
-      const finalKey = `youtube-shorts/${postId}/reel-${i + 1}-${Date.now()}.mp4`
-      await copyS3Object(outputS3Uri, s3Bucket, finalKey)
-
-      const s3Url = `s3://${s3Bucket}/${finalKey}`
-      videoResults.push({ s3Url, script })
+      const tmpRawPath = `/tmp/raw-scene-${i + 1}.mp4`
+      await downloadS3ToLocal(outputS3Uri, tmpRawPath)
+      rawClipPaths.push(tmpRawPath)
     }
 
-    const videoUrls = videoResults.map((r) => r.s3Url)
-    const scriptsOut = videoResults.map((r) => r.script)
+    log({ lambda: 'youtube-shorts-generator', step: 'clips-downloaded', status: 'complete', pct: 57,
+      meta: { clipCount: rawClipPaths.length } })
+
+    // ── Step 3: Convert each 1280×720 clip → 720×1280 portrait ───────────
+    log({ lambda: 'youtube-shorts-generator', step: 'vertical-convert', status: 'start', pct: 59 })
+
+    const verticalClipPaths: string[] = []
+    for (let i = 0; i < rawClipPaths.length; i++) {
+      const vertPath = `/tmp/scene-${i + 1}-vertical.mp4`
+      convertToVertical(rawClipPaths[i], vertPath)
+      verticalClipPaths.push(vertPath)
+    }
+
+    log({ lambda: 'youtube-shorts-generator', step: 'vertical-convert', status: 'complete', pct: 65 })
+
+    // ── Step 4: AWS Polly Neural TTS narration ────────────────────────────
+    log({ lambda: 'youtube-shorts-generator', step: 'polly-tts', status: 'start', pct: 67 })
+
+    const narrationPath = '/tmp/narration.mp3'
+    await generateNarration(script.fullScript, narrationPath)
+
+    const narrationKB = Math.round(fs.statSync(narrationPath).size / 1024)
+    log({ lambda: 'youtube-shorts-generator', step: 'polly-tts', status: 'complete', pct: 73,
+      meta: { narrationKB } })
+
+    // ── Step 5: FFmpeg — concat + loop + mux → broadcast-quality Short ────
+    log({ lambda: 'youtube-shorts-generator', step: 'ffmpeg-assembly', status: 'start', pct: 74 })
+
+    const finalPath = '/tmp/final.mp4'
+    assembleShort(verticalClipPaths, narrationPath, finalPath)
+
+    const finalMB = Math.round(fs.statSync(finalPath).size / (1024 * 1024))
+    log({ lambda: 'youtube-shorts-generator', step: 'ffmpeg-assembly', status: 'complete', pct: 88,
+      meta: { finalMB } })
+
+    // ── Step 6: Upload final.mp4 to S3 ────────────────────────────────────
+    const finalKey   = `youtube-shorts/${postId}/final-${Date.now()}.mp4`
+    const fileBuffer = fs.readFileSync(finalPath)
+
+    await s3.send(new PutObjectCommand({
+      Bucket:       s3Bucket,
+      Key:          finalKey,
+      Body:         fileBuffer,
+      ContentType:  'video/mp4',
+      CacheControl: 'public, max-age=31536000',
+      Metadata: {
+        source:   'nova-reel-polly-ffmpeg',
+        platform: 'youtube-shorts',
+        postId,
+      },
+    }))
+
+    cleanupTmp([
+      ...rawClipPaths,
+      ...verticalClipPaths,
+      narrationPath,
+      finalPath,
+      '/tmp/filelist.txt',
+      '/tmp/combined.mp4',
+    ])
+
+    const s3Url = `s3://${s3Bucket}/${finalKey}`
 
     log({ lambda: 'youtube-shorts-generator', step: 'handler-complete', status: 'complete', pct: 100,
-      meta: { postId, videoCount: videoUrls.length } })
+      meta: { postId, s3Url, finalMB } })
 
     return {
       postId,
       title,
       url,
       excerpt,
-      videoUrls,
-      scripts: scriptsOut,
+      videoUrls: [s3Url],
+      scripts:   [script],
     }
   } catch (err) {
     log({ lambda: 'youtube-shorts-generator', step: 'handler-error', status: 'error', pct: 0,
@@ -125,24 +187,49 @@ export const handler = async (event: GeneratorEvent) => {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Script generation — Claude claude-3-5-sonnet
+//  Script generation — Claude (scene-aware, 3 cinematic scenes + prompts)
 // ─────────────────────────────────────────────────────────────────────────────
-async function generateScripts(title: string, content: string): Promise<ReelScript[]> {
-  const truncatedContent = content.slice(0, 4000) // keep within context budget
+async function generateScript(title: string, content: string): Promise<ReelScript> {
+  const truncatedContent = content.slice(0, 4000)
 
-  const prompt = `You are a YouTube Shorts scriptwriter for WealthBeginners, a personal finance channel for beginners.
-Write 3 different SHORT video scripts (max 130 words each) based on this blog post.
-Each script must have: a strong hook (5s), key value body (40s), and CTA (10s) to wealthbeginners.com
-The CTA must always say: "Full guide at wealthbeginners.com — link in description"
+  const prompt = `You are a YouTube Shorts scriptwriter AND visual director for WealthBeginners, a personal finance channel for beginners.
+
+Create ONE compelling YouTube Short script with exactly 3 cinematic scenes based on this blog post.
+
 Blog title: ${title}
 Blog content: ${truncatedContent}
-Return ONLY a valid JSON array (no markdown, no explanation) with exactly this shape:
-[{ "hook": "...", "body": "...", "cta": "Full guide at wealthbeginners.com — link in description", "fullScript": "..." }]`
+
+NARRATION RULES:
+- Total narration ≤ 55 words (fits ~20 seconds of speech with natural pauses)
+- Scene 1 (hook, 6s): scroll-stopping opener that sparks immediate curiosity
+- Scene 2 (body, 6s): the single most actionable insight from the post
+- Scene 3 (cta, 6s): direct call-to-action → wealthbeginners.com
+
+VISUAL PROMPT RULES (each scene prompt ≤ 150 chars, for Amazon Nova Reel AI):
+- No people, no faces, no text overlays
+- Cinematic camera motion: slow zoom, dolly, pan, tilt, particle reveal
+- Color palette: deep navy #0B1628 background with gold #C9A84C accents
+- Scene 1: dramatic gold coin/money reveal — fast zoom in, high energy motion
+- Scene 2: sleek glowing chart/data animation — smooth slow pan, data points light up
+- Scene 3: radiant gold light burst with particle explosion — brand identity reveal
+
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "hook": "<hook narration>",
+  "body": "<body narration>",
+  "cta": "Full guide at wealthbeginners.com — link in description",
+  "fullScript": "<hook>\\n\\n<body>\\n\\nFull guide at wealthbeginners.com — link in description",
+  "scenes": [
+    { "scene": "hook", "narration": "<hook narration>", "visualPrompt": "<≤150 char prompt>" },
+    { "scene": "body", "narration": "<body narration>", "visualPrompt": "<≤150 char prompt>" },
+    { "scene": "cta",  "narration": "Full guide at wealthbeginners.com — link in description", "visualPrompt": "<≤150 char prompt>" }
+  ]
+}`
 
   const command = new InvokeModelCommand({
-    modelId: CLAUDE_MODEL,
+    modelId:     CLAUDE_MODEL,
     contentType: 'application/json',
-    accept: 'application/json',
+    accept:      'application/json',
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 2000,
@@ -154,44 +241,47 @@ Return ONLY a valid JSON array (no markdown, no explanation) with exactly this s
   const body     = JSON.parse(new TextDecoder().decode(response.body))
   const text: string = body.content[0].text.trim()
 
-  // Strip markdown code fences if present
   const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-  const scripts: ReelScript[] = JSON.parse(jsonText)
+  const parsed: ReelScript = JSON.parse(jsonText)
 
-  if (!Array.isArray(scripts) || scripts.length === 0) {
-    throw new Error('Claude returned an unexpected script format')
+  if (!Array.isArray(parsed.scenes) || parsed.scenes.length !== SCENE_COUNT) {
+    throw new Error(`Claude returned ${parsed.scenes?.length ?? 0} scenes, expected ${SCENE_COUNT}`)
   }
 
-  // Ensure CTA is always correct
-  return scripts.map((s) => ({
-    ...s,
-    cta: 'Full guide at wealthbeginners.com — link in description',
-    fullScript: `${s.hook}\n\n${s.body}\n\n${s.cta}`,
-  }))
+  // Enforce canonical CTA
+  parsed.cta = 'Full guide at wealthbeginners.com — link in description'
+  parsed.scenes[2].narration = parsed.cta
+  parsed.fullScript = `${parsed.hook}\n\n${parsed.body}\n\n${parsed.cta}`
+
+  return parsed
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Nova Reel — start async job
+//  Nova Reel — start async job (1280×720 native, enhanced cinematic prompt)
 // ─────────────────────────────────────────────────────────────────────────────
 async function startNovaReelJob(
-  scriptText: string,
-  bucket:     string,
+  visualPrompt: string,
+  bucket:       string,
   outputPrefix: string,
 ): Promise<string> {
-  // Nova Reel generates 6-second 9:16 vertical clips from a text prompt
-  const visualPrompt = buildVisualPrompt(scriptText)
+  // Prepend quality booster — truncate at 512 chars (Nova Reel prompt cap)
+  const enhancedPrompt = (
+    `Ultra-cinematic 6-second personal finance motion graphic. ${visualPrompt} ` +
+    'Photorealistic 4K quality, professional color grading, smooth 24fps motion, ' +
+    'deep navy background, gold accents, premium financial brand aesthetic.'
+  ).slice(0, 512)
 
   const command = new StartAsyncInvokeCommand({
     modelId: NOVA_REEL_MODEL,
     modelInput: {
-      taskType:    'TEXT_VIDEO',
+      taskType: 'TEXT_VIDEO',
       textToVideoParams: {
-        text: visualPrompt,
+        text: enhancedPrompt,
       },
       videoGenerationConfig: {
         durationSeconds: 6,
         fps:             24,
-        dimension:       '1280x720',  // Nova Reel supported: will be letterboxed to 9:16
+        dimension:       '1280x720',   // Nova Reel native — FFmpeg converts to 9:16
       },
     },
     outputDataConfig: {
@@ -202,14 +292,12 @@ async function startNovaReelJob(
   })
 
   const response = await bedrock.send(command)
-  if (!response.invocationArn) {
-    throw new Error('Nova Reel did not return an invocationArn')
-  }
+  if (!response.invocationArn) throw new Error('Nova Reel did not return an invocationArn')
   return response.invocationArn
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Nova Reel — poll until SUCCEEDED or throw on failure / timeout
+//  Nova Reel — poll until Completed | Failed | timeout
 // ─────────────────────────────────────────────────────────────────────────────
 async function pollUntilComplete(invocationArn: string): Promise<string> {
   const deadline = Date.now() + MAX_POLL_MS
@@ -222,75 +310,188 @@ async function pollUntilComplete(invocationArn: string): Promise<string> {
     const status   = response.status
 
     log({ lambda: 'youtube-shorts-generator', step: 'poll', status: 'start', pct: 50,
-      meta: { status, invocationArn: invocationArn.slice(-20) } })
+      meta: { status, arn: invocationArn.slice(-24) } })
 
     if (status === 'Completed') {
       const s3Uri = response.outputDataConfig?.s3OutputDataConfig?.s3Uri
-      if (!s3Uri) throw new Error(`Nova Reel completed but no S3 URI returned for ${invocationArn}`)
+      if (!s3Uri) throw new Error(`Nova Reel completed but returned no S3 URI: ${invocationArn}`)
       return s3Uri
     }
 
     if (status === 'Failed') {
-      const reason = (response as any).failureMessage ?? 'Unknown reason'
+      const reason = (response as any).failureMessage ?? 'unknown reason'
       throw new Error(`Nova Reel job failed: ${reason}`)
     }
     // InProgress — keep polling
   }
 
-  throw new Error(`Nova Reel polling timed out after 12 minutes for ${invocationArn}`)
+  throw new Error(`Nova Reel polling timed out (13 min) for ${invocationArn}`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Copy from Nova Reel output folder → final key
-//  Nova Reel writes: s3://{bucket}/{prefix}/output.mp4
+//  S3 → /tmp  (Nova Reel writes output.mp4 inside the prefix folder)
 // ─────────────────────────────────────────────────────────────────────────────
-async function copyS3Object(
-  outputFolderUri: string,
-  destBucket: string,
-  destKey:    string,
-): Promise<void> {
-  // outputFolderUri is the folder prefix; the actual file is output.mp4 inside it
+async function downloadS3ToLocal(outputFolderUri: string, localPath: string): Promise<void> {
   const withoutScheme = outputFolderUri.replace('s3://', '')
   const slashIdx  = withoutScheme.indexOf('/')
   const srcBucket = withoutScheme.slice(0, slashIdx)
   const srcPrefix = withoutScheme.slice(slashIdx + 1).replace(/\/$/, '')
   const srcKey    = `${srcPrefix}/output.mp4`
 
-  // Download from S3
-  const getCmd = new GetObjectCommand({ Bucket: srcBucket, Key: srcKey })
-  const getRes = await s3.send(getCmd)
+  const res    = await s3.send(new GetObjectCommand({ Bucket: srcBucket, Key: srcKey }))
   const chunks: Uint8Array[] = []
-  for await (const chunk of getRes.Body as any) {
-    chunks.push(chunk)
-  }
-  const body = Buffer.concat(chunks)
-
-  // Re-upload to final path
-  await s3.send(new PutObjectCommand({
-    Bucket:       destBucket,
-    Key:          destKey,
-    Body:         body,
-    ContentType:  'video/mp4',
-    CacheControl: 'public, max-age=31536000',
-    Metadata: { 'source': 'nova-reel', 'platform': 'youtube-shorts' },
-  }))
+  for await (const chunk of res.Body as any) chunks.push(chunk)
+  fs.writeFileSync(localPath, Buffer.concat(chunks))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Build a visual prompt from the script text for Nova Reel
+//  FFmpeg — convert 1280×720 landscape → 720×1280 portrait (blur-bars)
+//
+//  Layout (720×1280 canvas):
+//    • Background: input stretched to 720×1280 → heavy box-blur (fills frame)
+//    • Foreground: input scaled to 720×405 (sharp, aspect-preserved), centered
+//      → overlayY = (1280 - 405) / 2 = 437 px from top
 // ─────────────────────────────────────────────────────────────────────────────
-function buildVisualPrompt(script: string): string {
-  // Summarise to ~200 chars for the visual model — keep cinematic instructions
-  const summary = script.slice(0, 200)
+function convertToVertical(inputPath: string, outputPath: string): void {
+  const filterComplex = [
+    '[0:v]scale=720:405[fg]',
+    '[0:v]scale=720:1280,boxblur=luma_radius=25:luma_power=2[bg]',
+    '[bg][fg]overlay=0:437',
+  ].join(';')
+
+  try {
+    execFileSync(FFMPEG, [
+      '-y',
+      '-i', inputPath,
+      '-filter_complex', filterComplex,
+      '-c:v', 'libx264',
+      '-crf', '18',
+      '-preset', 'fast',
+      '-profile:v', 'high',
+      '-level',    '4.0',
+      '-pix_fmt',  'yuv420p',
+      '-an',             // no audio in raw clips
+      outputPath,
+    ], { stdio: 'pipe' })
+  } catch (err: any) {
+    throw new Error(
+      `FFmpeg vertical convert failed [${inputPath}]: ${err.stderr?.toString() ?? err.message}`
+    )
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  AWS Polly Neural TTS — fullScript → /tmp/narration.mp3
+//  Voice  : Stephen (en-US Neural) — authoritative, warm, natural cadence
+//  SSML   : 95% rate + +2% pitch + 450 ms paragraph breaks
+// ─────────────────────────────────────────────────────────────────────────────
+async function generateNarration(script: string, outputPath: string): Promise<void> {
+  const ssml = buildNarrationSSML(script)
+
+  const command = new SynthesizeSpeechCommand({
+    Engine:       'neural',
+    VoiceId:      'Stephen',
+    LanguageCode: 'en-US',
+    OutputFormat: 'mp3',
+    TextType:     'ssml',
+    Text:         ssml,
+    SampleRate:   '44100',
+  } as any)  // cast to bypass strict enum typing — string values are valid at runtime
+
+  const response = await polly.send(command)
+  if (!response.AudioStream) throw new Error('Polly returned no audio stream')
+
+  const chunks: Uint8Array[] = []
+  for await (const chunk of response.AudioStream as any) chunks.push(chunk)
+  fs.writeFileSync(outputPath, Buffer.concat(chunks))
+}
+
+function buildNarrationSSML(script: string): string {
+  const escaped = script
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n\n/g, '</p><break time="450ms"/><p>')
+    .replace(/\n/g, ' ')
+
   return (
-    `Cinematic 9:16 vertical personal finance visual. ${summary}. ` +
-    'Style: clean modern animation, navy blue #0B1628 and gold #C9A84C color palette, ' +
-    'bold typography motion graphics, no people, no faces, no text overlays, ' +
-    'professional financial education aesthetic, smooth transitions, 6 seconds'
+    '<speak>' +
+      '<prosody rate="95%" pitch="+2%">' +
+        `<p>${escaped}</p>` +
+      '</prosody>' +
+    '</speak>'
   )
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+// ─────────────────────────────────────────────────────────────────────────────
+//  FFmpeg — final assembly pipeline
+//
+//  1. Concat list → combined.mp4  (3 × 6s = 18s, silent, 720×1280)
+//  2. Loop combined.mp4 + mux Polly narration audio → final.mp4
+//     -stream_loop -1 : loops video infinitely
+//     -shortest       : stop when narration audio ends (~20s)
+//     CRF 18 / aac 192k / yuv420p / faststart = broadcast-quality YouTube Short
+// ─────────────────────────────────────────────────────────────────────────────
+function assembleShort(
+  clipPaths:     string[],
+  narrationPath: string,
+  outputPath:    string,
+): void {
+  const combinedPath = '/tmp/combined.mp4'
+  const filelistPath = '/tmp/filelist.txt'
+
+  // ── 1. Write concat list & join vertical clips ──────────────────────────
+  fs.writeFileSync(filelistPath, clipPaths.map(p => `file '${p}'`).join('\n'))
+
+  try {
+    execFileSync(FFMPEG, [
+      '-y',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', filelistPath,
+      '-c', 'copy',
+      combinedPath,
+    ], { stdio: 'pipe' })
+  } catch (err: any) {
+    throw new Error(`FFmpeg concat failed: ${err.stderr?.toString() ?? err.message}`)
+  }
+
+  // ── 2. Loop video + mux narration → final Short ─────────────────────────
+  try {
+    execFileSync(FFMPEG, [
+      '-y',
+      '-stream_loop', '-1',        // infinite video loop
+      '-i', combinedPath,
+      '-i', narrationPath,
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-c:v', 'libx264',
+      '-crf', '18',                // visually lossless quality
+      '-preset', 'fast',
+      '-profile:v', 'high',
+      '-level',    '4.0',
+      '-pix_fmt',  'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',              // broadcast audio quality
+      '-ar', '44100',
+      '-shortest',                 // stop at end of narration
+      '-movflags', '+faststart',   // YouTube streaming optimisation
+      outputPath,
+    ], { stdio: 'pipe' })
+  } catch (err: any) {
+    throw new Error(`FFmpeg mux failed: ${err.stderr?.toString() ?? err.message}`)
+  }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function cleanupTmp(paths: string[]): void {
+  for (const p of paths) {
+    try { fs.unlinkSync(p) } catch { /* ignore */ }
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}

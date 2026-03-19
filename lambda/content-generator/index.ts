@@ -30,13 +30,13 @@ export const handler = async (event: Event) => {
     const article = await callBedrock(keyword, category, retryCount > 0, relatedArticle, leadMagnet)
 
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'complete', pct: 70,
-      meta: { titleLength: article.title?.length, contentWords: article.content?.trim().split(/\s+/).length } })
+      meta: { titleLength: (article.title as string)?.length, contentWords: (article.content as string)?.trim().split(/\s+/).length } })
 
     // ── Step 2: Quality gate ─────────────────────────────────────────────
     await updateTopicStep(topicId, `Quality check · attempt ${attempt}/3`, dynamo, process.env.TOPICS_TABLE!)
     log({ lambda: 'content-generator', step: 'quality-gate', status: 'start', pct: 75 })
 
-    const quality = checkQuality(article.content)
+    const quality = checkQuality(article.content as string)
 
     if (!quality.passed) {
       log({ lambda: 'content-generator', step: 'quality-gate', status: 'warn', pct: 75,

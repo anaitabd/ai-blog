@@ -90,7 +90,7 @@ function sleep(ms: number): Promise<void> {
 async function fetchTrendScore(keyword: string): Promise<number> {
   try {
     await sleep(500)
-    const raw = await googleTrends.interestOverTime({ keyword, geo: 'US', hl: 'en-US' })
+    const raw = await (googleTrends as any).interestOverTime({ keyword, geo: 'US', hl: 'en-US' })
     const parsed = JSON.parse(raw)
     const timeline: Array<{ value: number[] }> = parsed?.default?.timelineData ?? []
     if (timeline.length === 0) return 50

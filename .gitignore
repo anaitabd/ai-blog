@@ -9,3 +9,9 @@ prisma/migrations
 infra/cdk.out
 .idea
 client_secret_*.json
+
+# FFmpeg binary — downloaded at deploy time via scripts/download-ffmpeg-layer.sh
+# Do NOT commit the binary (76 MB); .gitkeep preserves the directory in git
+lambda/layers/ffmpeg/bin/ffmpeg
+
+

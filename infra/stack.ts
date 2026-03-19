@@ -188,16 +188,29 @@ export class AiBlogStack extends cdk.Stack {
     const ytPublisherDlq  = new sqs.Queue(this, 'YoutubePublisherDLQ',  { queueName: 'ai-blog-yt-publisher-dlq'  })
     const emailNotifierDlq = new sqs.Queue(this, 'EmailNotifierDLQ',    { queueName: 'ai-blog-email-notifier-dlq' })
 
+    // ─── FFmpeg Lambda Layer ─────────────────────────────────
+    // Static amd64 binary from johnvansickle.com — run scripts/download-ffmpeg-layer.sh
+    // before deploying to populate lambda/layers/ffmpeg/bin/ffmpeg
+    const ffmpegLayer = new lambda.LayerVersion(this, 'FfmpegLayer', {
+      layerVersionName: 'ai-blog-ffmpeg',
+      code: lambda.Code.fromAsset(path.join(lambdaDir, 'layers', 'ffmpeg')),
+      compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+      description: 'Static FFmpeg binary for Amazon Linux 2 x86_64 — video assembly for YouTube Shorts',
+    })
+
     // ─── Lambda: YouTube Shorts Generator ───────────────────
     const youtubeGeneratorFn = new NodejsFunction(this, 'YoutubeShortGenerator', {
       functionName: 'ai-blog-youtube-shorts-generator',
       entry: path.join(lambdaDir, 'youtube-shorts-generator', 'index.ts'),
       runtime: lambda.Runtime.NODEJS_20_X,
-      timeout: cdk.Duration.minutes(14),
-      memorySize: 1024,
+      timeout: cdk.Duration.minutes(15),          // max Lambda timeout — Nova Reel polling + FFmpeg
+      memorySize: 3008,                            // FFmpeg video encoding needs headroom
+      ephemeralStorageSize: cdk.Size.mebibytes(4096), // 4 GB /tmp for raw + vertical clips
       deadLetterQueue: ytGeneratorDlq,
+      layers: [ffmpegLayer],
       environment: {
         ...sharedEnv,
+        FFMPEG_PATH: '/opt/bin/ffmpeg',
       },
     })
 
@@ -208,6 +221,11 @@ export class AiBlogStack extends cdk.Stack {
         'bedrock:StartAsyncInvoke',
         'bedrock:GetAsyncInvoke',
       ],
+      resources: ['*'],
+    }))
+    youtubeGeneratorFn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['polly:SynthesizeSpeech'],
       resources: ['*'],
     }))
     imagesBucket.grantReadWrite(youtubeGeneratorFn)
