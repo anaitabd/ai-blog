@@ -10,13 +10,10 @@ export default function TriggerButton() {
     setLoading(true)
     setResult(null)
     try {
-      const res = await fetch('/api/admin/trigger', {
-        method: 'POST',
-        headers: { 'x-admin-key': prompt('Enter admin API key:') ?? '' },
-      })
+      const res = await fetch('/api/admin/trigger', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        setResult(`Pipeline started for: "${data.keyword}"`)
+        setResult(`Pipeline started: "${data.keyword}"`)
       } else {
         setResult(`Error: ${data.error}`)
       }

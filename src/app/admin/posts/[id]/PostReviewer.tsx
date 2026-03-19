@@ -46,7 +46,6 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   const [improving, setImproving] = useState(false)
   const [improveMsg, setImproveMsg] = useState<string | null>(null)
   const [tab, setTab] = useState<'preview' | 'edit' | 'seo' | 'raw' | 'youtube'>('preview')
-  const [adminKey, setAdminKey] = useState('')
   const [post, setPost]       = useState(initial)
   const [confirm, setConfirm] = useState<'PUBLISHED' | 'REJECTED' | 'DELETE' | null>(null)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
@@ -60,7 +59,6 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   const [ytMsg,          setYtMsg]          = useState<string | null>(null)
   const [ytStarted,      setYtStarted]      = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const keyRef  = useRef('')
 
   const metaTitleOk  = post.metaTitle.length >= 50 && post.metaTitle.length <= 60
   const metaDescOk   = post.metaDesc.length  >= 145 && post.metaDesc.length  <= 158
@@ -83,16 +81,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   ]
   const seoScore = Math.round((seoChecks.filter((c) => c.ok).length / seoChecks.length) * 100)
 
-  function getKey() {
-    if (adminKey) return adminKey
-    const k = window.prompt('Enter admin API key:') || ''
-    if (k) setAdminKey(k)
-    return k
-  }
-
   async function improvePost() {
-    const key = getKey()
-    if (!key) return
     const failing = seoChecks.filter((c) => !c.ok).map((c) => c.key)
     if (failing.length === 0) return
     setImproving(true)
@@ -100,7 +89,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
     try {
       const res = await fetch(`/api/admin/posts/${post.id}/improve`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content:      post.content,
           metaTitle:    post.metaTitle,
@@ -132,10 +121,8 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   // ── YouTube helpers ───────────────────────────────────────────────────────
-  async function fetchShorts(key: string) {
-    const res = await fetch(`/api/admin/posts/${post.id}/youtube`, {
-      headers: { 'x-admin-key': key },
-    })
+  async function fetchShorts() {
+    const res = await fetch(`/api/admin/posts/${post.id}/youtube`)
     if (res.ok) {
       const { shorts } = await res.json()
       setYtShorts(shorts)
@@ -144,8 +131,8 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   useEffect(() => {
-    if (tab === 'youtube' && !ytLoaded && adminKey) fetchShorts(adminKey)
-  }, [tab, ytLoaded, adminKey])
+    if (tab === 'youtube' && !ytLoaded) fetchShorts()
+  }, [tab, ytLoaded])
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
@@ -153,7 +140,6 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
     try {
       const res  = await fetch(
         `/api/admin/posts/${post.id}/youtube/generate?executionArn=${encodeURIComponent(execArn)}`,
-        { headers: { 'x-admin-key': keyRef.current } },
       )
       const data = await res.json()
       setYtStatus(data.status)
@@ -161,7 +147,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
         clearInterval(pollRef.current!)
         setYtGenerating(false)
         setYtMsg('✅ Shorts published to YouTube!')
-        fetchShorts(keyRef.current)
+        fetchShorts()
       } else if (['FAILED', 'TIMED_OUT', 'ABORTED'].includes(data.status)) {
         clearInterval(pollRef.current!)
         setYtGenerating(false)
@@ -171,9 +157,6 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   async function generateShorts() {
-    const key = getKey()
-    if (!key) return
-    keyRef.current = key
     setYtGenerating(true)
     setYtMsg(null)
     setYtStatus('RUNNING')
@@ -181,7 +164,7 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
     try {
       const res  = await fetch(`/api/admin/posts/${post.id}/youtube/generate`, {
         method:  'POST',
-        headers: { 'x-admin-key': key, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to start generation')
@@ -201,12 +184,10 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   async function updateStatus(status: 'PUBLISHED' | 'REJECTED') {
-    const key = getKey()
-    if (!key) return
     setLoading(true)
     const res = await fetch(`/api/admin/posts/${post.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, title: post.title, metaTitle: post.metaTitle, metaDesc: post.metaDesc }),
     })
     setLoading(false)
@@ -220,13 +201,11 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   async function saveChanges() {
-    const key = getKey()
-    if (!key) return
     setSaving(true)
     setSaveMsg(null)
     const res = await fetch(`/api/admin/posts/${post.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title:     post.title,
         content:   post.content,
@@ -250,12 +229,10 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   async function changeStatus(status: 'DRAFT' | 'REVIEW') {
-    const key = getKey()
-    if (!key) return
     setLoading(true)
     const res = await fetch(`/api/admin/posts/${post.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     })
     setLoading(false)
@@ -263,12 +240,9 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   }
 
   async function deletePost() {
-    const key = getKey()
-    if (!key) return
     setLoading(true)
     const res = await fetch(`/api/admin/posts/${post.id}`, {
       method: 'DELETE',
-      headers: { 'x-admin-key': key },
     })
     setLoading(false)
     setConfirm(null)

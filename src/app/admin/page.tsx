@@ -44,7 +44,7 @@ export default async function AdminPage() {
       </div>
 
       {/* Pipeline Activity */}
-      <PipelineActivity adminKey={process.env.ADMIN_API_KEY!} />
+      <PipelineActivity />
 
       {/* Stats cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">        {STATUS_CARD.map((s) => (

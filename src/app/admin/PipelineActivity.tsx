@@ -149,7 +149,7 @@ function PipelineTable({ items }: Readonly<{ items: PipelineItem[] }>) {
   )
 }
 
-export default function PipelineActivity({ adminKey }: Readonly<{ adminKey: string }>) {
+export default function PipelineActivity() {
   const [items, setItems]             = useState<PipelineItem[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
@@ -157,9 +157,7 @@ export default function PipelineActivity({ adminKey }: Readonly<{ adminKey: stri
 
   const fetchPipeline = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/pipeline', {
-        headers: { 'x-admin-key': adminKey },
-      })
+      const res = await fetch('/api/admin/pipeline')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setItems(data.items ?? [])
@@ -170,7 +168,7 @@ export default function PipelineActivity({ adminKey }: Readonly<{ adminKey: stri
     } finally {
       setLoading(false)
     }
-  }, [adminKey])
+  }, [])
 
   useEffect(() => {
     fetchPipeline()
