@@ -28,7 +28,7 @@ const ssm     = new SSMClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const NOVA_REEL_MODEL   = 'amazon.nova-reel-v1:0'
-const CLAUDE_MODEL      = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0'
+const CLAUDE_MODEL      = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 const POLL_INTERVAL_MS  = 15_000   // 15 seconds
 const MAX_POLL_MS       = 12 * 60 * 1000 // 12 minutes
 
