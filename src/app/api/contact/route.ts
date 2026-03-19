@@ -48,21 +48,29 @@ export async function POST(req: NextRequest) {
     const { name, email, subject, message } = parsed.data
     const adminEmail = await getAdminEmail()
 
-    // Forward to admin
-    await sendEmail({
-      to:      adminEmail,
-      from:    `WealthBeginners Contact <${FROM_EMAIL}>`,
-      subject: `New Contact: ${subject}`,
-      html:    contactAdminEmailHtml({ name, email, subject, message }),
-    })
+    // Forward to admin — primary action, log but don't block on failure
+    try {
+      await sendEmail({
+        to:      adminEmail,
+        from:    `WealthBeginners Contact <${FROM_EMAIL}>`,
+        subject: `New Contact: ${subject}`,
+        html:    contactAdminEmailHtml({ name, email, subject, message }),
+      })
+    } catch (sesErr) {
+      console.error('[contact] Admin forward SES error (non-blocking):', sesErr)
+    }
 
-    // Auto-reply to sender
-    await sendEmail({
-      to:      email,
-      from:    `Wealth Beginners <${FROM_EMAIL}>`,
-      subject: `We received your message — ${subject}`,
-      html:    contactAutoReplyHtml(name),
-    })
+    // Auto-reply to sender — best-effort only (fails in SES sandbox for unverified addresses)
+    try {
+      await sendEmail({
+        to:      email,
+        from:    `Wealth Beginners <${FROM_EMAIL}>`,
+        subject: `We received your message — ${subject}`,
+        html:    contactAutoReplyHtml(name),
+      })
+    } catch (sesErr) {
+      console.warn('[contact] Auto-reply SES error (non-blocking):', sesErr)
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {
