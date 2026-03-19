@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn'
 import { DynamoDBClient, QueryCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb'
 
-const credentials = {
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-}
-
-const sfn    = new SFNClient({ region: process.env.AWS_REGION, credentials })
-const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION, credentials })
+// No explicit credentials — the Amplify SSR execution role provides them via
+// the IAM service role attached to the Amplify app (AmplifyAiBlogServiceRole).
+const REGION = process.env.REGION ?? 'us-east-1'
+const sfn    = new SFNClient({ region: REGION })
+const dynamo = new DynamoDBClient({ region: REGION })
 
 export async function POST(req: NextRequest) {
   const apiKey = req.headers.get('x-admin-key')
@@ -74,8 +72,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, keyword })
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
     console.error('Trigger error:', err)
-    return NextResponse.json({ error: 'Failed to trigger pipeline' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to trigger pipeline', detail: msg }, { status: 500 })
   }
 }
 

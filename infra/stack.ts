@@ -11,6 +11,8 @@ import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks'
 import * as events from 'aws-cdk-lib/aws-events'
 import * as targets from 'aws-cdk-lib/aws-events-targets'
 import * as iam from 'aws-cdk-lib/aws-iam'
+import * as sqs from 'aws-cdk-lib/aws-sqs'
+import * as ssm from 'aws-cdk-lib/aws-ssm'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
 import { Construct } from 'constructs'
 import * as path from 'path'
@@ -176,19 +178,146 @@ export class AiBlogStack extends cdk.Stack {
       time: sfn.WaitTime.duration(cdk.Duration.seconds(15)),
     })
 
-    const successState = new sfn.Succeed(this, 'PipelineSuccess')
     const failState = new sfn.Fail(this, 'PipelineFailed', {
       error: 'PipelineFailed',
       cause: 'Pipeline failed after all retries',
     })
 
+    // ─── DLQs for new Lambdas ────────────────────────────────
+    const ytGeneratorDlq  = new sqs.Queue(this, 'YoutubeGeneratorDLQ',  { queueName: 'ai-blog-yt-generator-dlq'  })
+    const ytPublisherDlq  = new sqs.Queue(this, 'YoutubePublisherDLQ',  { queueName: 'ai-blog-yt-publisher-dlq'  })
+    const emailNotifierDlq = new sqs.Queue(this, 'EmailNotifierDLQ',    { queueName: 'ai-blog-email-notifier-dlq' })
+
+    // ─── Lambda: YouTube Shorts Generator ───────────────────
+    const youtubeGeneratorFn = new NodejsFunction(this, 'YoutubeShortGenerator', {
+      functionName: 'ai-blog-youtube-shorts-generator',
+      entry: path.join(lambdaDir, 'youtube-shorts-generator', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(14),
+      memorySize: 1024,
+      deadLetterQueue: ytGeneratorDlq,
+      environment: {
+        ...sharedEnv,
+      },
+    })
+
+    youtubeGeneratorFn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'bedrock:InvokeModel',
+        'bedrock:StartAsyncInvoke',
+        'bedrock:GetAsyncInvoke',
+      ],
+      resources: ['*'],
+    }))
+    imagesBucket.grantReadWrite(youtubeGeneratorFn)
+    youtubeGeneratorFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/youtube/*`,
+      ],
+    }))
+
+    // ─── Lambda: YouTube Shorts Publisher ───────────────────
+    const youtubePublisherFn = new NodejsFunction(this, 'YoutubeShortPublisher', {
+      functionName: 'ai-blog-youtube-shorts-publisher',
+      entry: path.join(lambdaDir, 'youtube-shorts-publisher', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(10),
+      memorySize: 512,
+      deadLetterQueue: ytPublisherDlq,
+      environment: {
+        ...sharedEnv,
+        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? '',
+        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '',
+      },
+    })
+
+    imagesBucket.grantRead(youtubePublisherFn)
+    youtubePublisherFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/youtube/*`,
+      ],
+    }))
+
+    // ─── Lambda: Email Notifier ──────────────────────────────
+    const emailNotifierFn = new NodejsFunction(this, 'EmailNotifier', {
+      functionName: 'ai-blog-email-notifier',
+      entry: path.join(lambdaDir, 'email-notifier', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 256,
+      deadLetterQueue: emailNotifierDlq,
+      environment: {
+        ...sharedEnv,
+        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? '',
+        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '',
+      },
+    })
+
+    emailNotifierFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }))
+    emailNotifierFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/ses/*`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/admin-email`,
+      ],
+    }))
+
+    // ─── SSM: SES from-email ─────────────────────────────────
+    // NOTE: /wealthbeginners/ses/from-email is managed by scripts/deploy.sh
+    // (aws ssm put-parameter). CDK does not own it — avoids conflicts on re-deploy.
+
+    // ─── Step Functions — post-publish parallel branch ───────
+    const youtubeGenerateStep = new tasks.LambdaInvoke(this, 'GenerateYoutubeShorts', {
+      lambdaFunction: youtubeGeneratorFn,
+      outputPath: '$.Payload',
+    })
+
+    const youtubePublishStep = new tasks.LambdaInvoke(this, 'PublishYoutubeShorts', {
+      lambdaFunction: youtubePublisherFn,
+      outputPath: '$.Payload',
+    })
+
+    const emailNotifyStep = new tasks.LambdaInvoke(this, 'NotifySubscribers', {
+      lambdaFunction: emailNotifierFn,
+      outputPath: '$.Payload',
+    })
+
+    // Error handling for new steps (non-blocking — pipeline already succeeded)
+    youtubeGenerateStep.addCatch(new sfn.Pass(this, 'YoutubeGeneratorFailed'), {
+      errors: ['States.ALL'], resultPath: '$.youtubeError',
+    })
+    youtubePublishStep.addCatch(new sfn.Pass(this, 'YoutubePublisherFailed'), {
+      errors: ['States.ALL'], resultPath: '$.youtubeError',
+    })
+    emailNotifyStep.addCatch(new sfn.Pass(this, 'EmailNotifierFailed'), {
+      errors: ['States.ALL'], resultPath: '$.emailError',
+    })
+
+    const successState = new sfn.Succeed(this, 'PipelineSuccess')
+
+    const youtubeFlow = youtubeGenerateStep.next(youtubePublishStep)
+    const emailFlow   = emailNotifyStep
+
+    const postPublishParallel = new sfn.Parallel(this, 'PostPublishParallel')
+      .branch(youtubeFlow)
+      .branch(emailFlow)
+
+    postPublishParallel.next(successState)
+    postPublishParallel.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.parallelError' })
+
+    publishStep.next(postPublishParallel)
+    generateStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
+    publishStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
+
     const checkQuality = new sfn.Choice(this, 'CheckQuality')
       .when(sfn.Condition.booleanEquals('$.shouldRetry', true), waitStep.next(generateStep))
       .otherwise(publishStep)
-
-    publishStep.next(successState)
-    generateStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
-    publishStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
 
     const definition = generateStep.next(checkQuality)
 
@@ -227,6 +356,9 @@ export class AiBlogStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'TopicsTableName', { value: topicsTable.tableName })
     new cdk.CfnOutput(this, 'StateMachineArn', { value: stateMachine.stateMachineArn })
     new cdk.CfnOutput(this, 'ImagesBucketName', { value: imagesBucket.bucketName })
+    new cdk.CfnOutput(this, 'YoutubeGeneratorDLQUrl',  { value: ytGeneratorDlq.queueUrl })
+    new cdk.CfnOutput(this, 'YoutubePublisherDLQUrl',  { value: ytPublisherDlq.queueUrl })
+    new cdk.CfnOutput(this, 'EmailNotifierDLQUrl',     { value: emailNotifierDlq.queueUrl })
     new cdk.CfnOutput(this, 'DbEndpoint', {
       value: database.dbInstanceEndpointAddress,
       description: 'RDS PostgreSQL endpoint',

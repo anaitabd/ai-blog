@@ -34,9 +34,26 @@ model Post {
   publishedAt        DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
+  youtubeShorts      YoutubeShort[]
 
   @@index([slug])
   @@index([status, publishedAt])
+}
+
+model YoutubeShort {
+  id              String   @id @default(cuid())
+  postId          String
+  post            Post     @relation(fields: [postId], references: [id])
+  youtubeVideoId  String   @unique
+  youtubeVideoUrl String
+  s3VideoUrl      String
+  title           String
+  caption         String?
+  script          String?  @db.Text
+  publishedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([postId])
 }
 
 model Category {

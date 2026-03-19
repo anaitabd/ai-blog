@@ -3,19 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "prisma generate --schema=../prisma/schema.prisma && tsc -p tsconfig.json",
     "seed": "aws lambda invoke --function-name ai-blog-topic-seeder --payload '{}' /dev/stdout",
     "trigger": "aws lambda invoke --function-name ai-blog-topic-picker --payload '{}' /dev/stdout"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.600.0",
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.600.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",
     "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-ses": "^3.600.0",
     "@aws-sdk/client-sfn": "^3.600.0",
+    "@aws-sdk/client-ssm": "^3.600.0",
+    "@prisma/client": "^5.14.0",
+    "axios": "^1.6.0",
     "google-trends-api": "^4.9.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "prisma": "^5.14.0",
     "typescript": "^5.4.5"
   }
 }

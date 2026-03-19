@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  sendEmail,
+  contactAdminEmailHtml,
+  contactAutoReplyHtml,
+  FROM_EMAIL,
+} from '@/lib/ses'
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
 import { z } from 'zod'
+
+const ssm = new SSMClient({ region: process.env.REGION ?? process.env.AWS_REGION ?? 'us-east-1' })
 
 const Schema = z.object({
   name:    z.string().min(2).max(100),
@@ -7,6 +16,18 @@ const Schema = z.object({
   subject: z.string().min(2).max(100),
   message: z.string().min(10).max(2000),
 })
+
+async function getAdminEmail(): Promise<string> {
+  try {
+    const res = await ssm.send(new GetParameterCommand({
+      Name:           '/wealthbeginners/admin-email',
+      WithDecryption: true,
+    }))
+    return res.Parameter?.Value ?? FROM_EMAIL
+  } catch {
+    return FROM_EMAIL
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,12 +42,27 @@ export async function POST(req: NextRequest) {
     }
 
     const { name, email, subject, message } = parsed.data
+    const adminEmail = await getAdminEmail()
 
-    // Log to console — integrate Resend / AWS SES in production
-    console.log('[Contact Form]', { name, email, subject, message: message.slice(0, 100) })
+    // Forward to admin
+    await sendEmail({
+      to:      adminEmail,
+      from:    `WealthBeginners Contact <${FROM_EMAIL}>`,
+      subject: `New Contact: ${subject}`,
+      html:    contactAdminEmailHtml({ name, email, subject, message }),
+    })
+
+    // Auto-reply to sender
+    await sendEmail({
+      to:      email,
+      from:    `Wealth Beginners <${FROM_EMAIL}>`,
+      subject: `We received your message — ${subject}`,
+      html:    contactAutoReplyHtml(name),
+    })
 
     return NextResponse.json({ success: true })
-  } catch {
+  } catch (err) {
+    console.error('[contact] SES send error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
