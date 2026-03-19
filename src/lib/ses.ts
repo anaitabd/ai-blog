@@ -6,7 +6,11 @@
 
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses'
 
-const ses = new SESClient({ region: process.env.REGION ?? process.env.AWS_REGION ?? 'us-east-1' })
+const _region = process.env.REGION ?? process.env.AWS_REGION ?? 'us-east-1'
+const _sesCredentials = process.env.APP_KEY_ID
+  ? { accessKeyId: process.env.APP_KEY_ID!, secretAccessKey: process.env.APP_KEY_SECRET! }
+  : undefined
+const ses = new SESClient({ region: _region, ...(_sesCredentials && { credentials: _sesCredentials }) })
 
 export const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'hello@wealthbeginners.com'
 export const SITE_URL   = 'https://wealthbeginners.com'

@@ -8,7 +8,11 @@ import {
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
 import { z } from 'zod'
 
-const ssm = new SSMClient({ region: process.env.REGION ?? process.env.AWS_REGION ?? 'us-east-1' })
+const _region = process.env.REGION ?? process.env.AWS_REGION ?? 'us-east-1'
+const _ssmCreds = process.env.APP_KEY_ID
+  ? { accessKeyId: process.env.APP_KEY_ID!, secretAccessKey: process.env.APP_KEY_SECRET! }
+  : undefined
+const ssm = new SSMClient({ region: _region, ...(_ssmCreds && { credentials: _ssmCreds }) })
 
 const Schema = z.object({
   name:    z.string().min(2).max(100),

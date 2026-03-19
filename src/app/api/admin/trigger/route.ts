@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn'
 import { DynamoDBClient, QueryCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb'
 
-// No explicit credentials — the Amplify SSR execution role provides them via
-// the IAM service role attached to the Amplify app (AmplifyAiBlogServiceRole).
+// Amplify blocks AWS_ prefix env vars at runtime — use APP_KEY_* instead.
+// Set APP_KEY_ID and APP_KEY_SECRET in Amplify console / via deploy script.
 const REGION = process.env.REGION ?? 'us-east-1'
-const sfn    = new SFNClient({ region: REGION })
-const dynamo = new DynamoDBClient({ region: REGION })
+const credentials = process.env.APP_KEY_ID
+  ? { accessKeyId: process.env.APP_KEY_ID!, secretAccessKey: process.env.APP_KEY_SECRET! }
+  : undefined   // falls back to IAM role when running locally with AWS env vars
+
+const sfn    = new SFNClient({ region: REGION, ...(credentials && { credentials }) })
+const dynamo = new DynamoDBClient({ region: REGION, ...(credentials && { credentials }) })
 
 export async function POST(req: NextRequest) {
   const apiKey = req.headers.get('x-admin-key')
