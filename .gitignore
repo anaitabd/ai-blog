@@ -8,3 +8,4 @@ dist
 prisma/migrations
 infra/cdk.out
 .idea
+client_secret_*.json
