@@ -32,8 +32,10 @@ function SeoIndicator({ ok, label }: { ok: boolean; label: string }) {
 
 export default function PostReviewer({ post: initial }: { post: Post }) {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
-  const [saving,  setSaving]  = useState(false)
+  const [loading,   setLoading]   = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [improving, setImproving] = useState(false)
+  const [improveMsg, setImproveMsg] = useState<string | null>(null)
   const [tab, setTab]         = useState<'preview' | 'edit' | 'seo' | 'raw'>('preview')
   const [adminKey, setAdminKey] = useState('')
   const [post, setPost]       = useState(initial)
@@ -50,14 +52,14 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
   const hasH2        = (post.content.match(/^## /gm) || []).length >= 4
 
   const seoChecks = [
-    { ok: metaTitleOk,  label: `Meta title (${post.metaTitle.length} chars, target 50-60)` },
-    { ok: metaDescOk,   label: `Meta desc (${post.metaDesc.length} chars, target 145-158)` },
-    { ok: wordCountOk,  label: `Word count (${post.wordCount.toLocaleString()}, min 1,500)` },
-    { ok: hasStats,     label: 'Contains real statistics / sources' },
-    { ok: hasTable,     label: 'Comparison table present' },
-    { ok: hasCallouts,  label: 'Callout boxes (💡/📊/⚠️) present' },
-    { ok: hasAnecdotes, label: 'E-E-A-T anecdote placeholders (×3)' },
-    { ok: hasH2,        label: `H2 sections (${(post.content.match(/^## /gm) || []).length} found, min 4)` },
+    { key: 'metaTitle', ok: metaTitleOk,  label: `Meta title (${post.metaTitle.length} chars, target 50-60)` },
+    { key: 'metaDesc',  ok: metaDescOk,   label: `Meta desc (${post.metaDesc.length} chars, target 145-158)` },
+    { key: 'wordCount', ok: wordCountOk,  label: `Word count (${post.wordCount.toLocaleString()}, min 1,500)` },
+    { key: 'stats',     ok: hasStats,     label: 'Contains real statistics / sources' },
+    { key: 'table',     ok: hasTable,     label: 'Comparison table present' },
+    { key: 'callouts',  ok: hasCallouts,  label: 'Callout boxes (💡/📊/⚠️) present' },
+    { key: 'anecdotes', ok: hasAnecdotes, label: 'E-E-A-T anecdote placeholders (×3)' },
+    { key: 'h2count',   ok: hasH2,        label: `H2 sections (${(post.content.match(/^## /gm) || []).length} found, min 4)` },
   ]
   const seoScore = Math.round((seoChecks.filter((c) => c.ok).length / seoChecks.length) * 100)
 
@@ -66,6 +68,47 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
     const k = window.prompt('Enter admin API key:') || ''
     if (k) setAdminKey(k)
     return k
+  }
+
+  async function improvePost() {
+    const key = getKey()
+    if (!key) return
+    const failing = seoChecks.filter((c) => !c.ok).map((c) => c.key)
+    if (failing.length === 0) return
+    setImproving(true)
+    setImproveMsg(null)
+    try {
+      const res = await fetch(`/api/admin/posts/${post.id}/improve`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({
+          content:      post.content,
+          metaTitle:    post.metaTitle,
+          metaDesc:     post.metaDesc,
+          keyword:      post.title,
+          failingChecks: failing,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail ?? data.error ?? 'Unknown error')
+      const { improved } = data
+      // Merge improvements into post state
+      setPost((p) => ({
+        ...p,
+        ...(improved.metaTitle && { metaTitle: improved.metaTitle }),
+        ...(improved.metaDesc  && { metaDesc:  improved.metaDesc }),
+        ...(improved.content   && {
+          content:     improved.content,
+          wordCount:   improved.content.trim().split(/\s+/).filter(Boolean).length,
+          readingTime: Math.ceil(improved.content.trim().split(/\s+/).filter(Boolean).length / 215),
+        }),
+      }))
+      setImproveMsg('✅ Applied! Review changes then Save.')
+    } catch (err) {
+      setImproveMsg(`❌ ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setImproving(false)
+    }
   }
 
   async function updateStatus(status: 'PUBLISHED' | 'REJECTED') {
@@ -425,6 +468,36 @@ export default function PostReviewer({ post: initial }: { post: Post }) {
           <div className="space-y-2">
             {seoChecks.map((c) => <SeoIndicator key={c.label} ok={c.ok} label={c.label} />)}
           </div>
+
+          {/* ── Improve button ── */}
+          {seoChecks.some((c) => !c.ok) && (
+            <div className="pt-1 border-t border-border space-y-2">
+              <button
+                onClick={improvePost}
+                disabled={improving}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#1A1A2E] hover:bg-navy text-[#C9A84C] border border-[#C9A84C]/30 hover:border-[#C9A84C]/60 disabled:opacity-50 transition-all"
+              >
+                {improving ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
+                    </svg>
+                    Improving with AI…
+                  </>
+                ) : (
+                  <>
+                    ✨ Improve {seoChecks.filter((c) => !c.ok).length} failing check{seoChecks.filter((c) => !c.ok).length > 1 ? 's' : ''}
+                  </>
+                )}
+              </button>
+              {improveMsg && (
+                <p className={`text-xs text-center font-medium ${improveMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>
+                  {improveMsg}
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="text-xs text-muted mb-1">Word count (target 1,500–1,900)</p>

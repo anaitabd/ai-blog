@@ -152,7 +152,7 @@ export class AiBlogStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         ...sharedEnv,
-        NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL ?? '',
+        NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
         WEBHOOK_SECRET: process.env.WEBHOOK_SECRET ?? '',
       },
     })
@@ -228,8 +228,8 @@ export class AiBlogStack extends cdk.Stack {
       deadLetterQueue: ytPublisherDlq,
       environment: {
         ...sharedEnv,
-        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? '',
-        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '',
+        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
+        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '6c13452975531ad43e1fd57b46fd003a03606dc7a5d2b723b5c9b5e6cad4a2ee',
       },
     })
 
@@ -251,8 +251,8 @@ export class AiBlogStack extends cdk.Stack {
       deadLetterQueue: emailNotifierDlq,
       environment: {
         ...sharedEnv,
-        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? '',
-        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '',
+        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
+        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '6c13452975531ad43e1fd57b46fd003a03606dc7a5d2b723b5c9b5e6cad4a2ee',
       },
     })
 
