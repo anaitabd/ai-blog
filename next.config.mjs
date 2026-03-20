@@ -54,6 +54,8 @@ const nextConfig = {
     PEXELS_API_KEY:        process.env.PEXELS_API_KEY,
     UNSPLASH_ACCESS_KEY:   process.env.UNSPLASH_ACCESS_KEY,
     ANTHROPIC_API_KEY:     process.env.ANTHROPIC_API_KEY,
+    // Email
+    RESEND_API_KEY:        process.env.RESEND_API_KEY,
   },
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],

@@ -1,11 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  AWS SES helper  — shared by Next.js API routes
-//  Reads SES_FROM_EMAIL from environment (set at deploy time via SSM-backed
-//  Amplify/ECS env or Next.js .env.local for local dev)
+//  Email helper — Resend (primary) → AWS SES (fallback)
+//
+//  Resend:  set RESEND_API_KEY  in .env → https://resend.com (free, no sandbox)
+//  SES:     set APP_KEY_ID / APP_KEY_SECRET + SES_FROM_EMAIL  (sandbox until
+//           AWS approves production access)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses'
+import { Resend } from 'resend'
 
+// ── Resend client (lazy — only created when key is present) ───────────────────
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY
+  return key ? new Resend(key) : null
+}
+
+// ── SES client ────────────────────────────────────────────────────────────────
 const _region = process.env.REGION ?? process.env.AWS_REGION ?? 'us-east-1'
 const _sesCredentials = process.env.APP_KEY_ID
   ? { accessKeyId: process.env.APP_KEY_ID!, secretAccessKey: process.env.APP_KEY_SECRET! }
@@ -13,10 +23,10 @@ const _sesCredentials = process.env.APP_KEY_ID
 const ses = new SESClient({ region: _region, ...(_sesCredentials && { credentials: _sesCredentials }) })
 
 export const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'hello@wealthbeginners.com'
-export const SITE_URL   = 'https://wealthbeginners.com'
+export const SITE_URL   = 'https://www.wealthbeginners.com'
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Low-level send wrapper
+//  Low-level send wrapper — tries Resend first, falls back to SES
 // ─────────────────────────────────────────────────────────────────────────────
 export async function sendEmail(opts: {
   to:       string | string[]
@@ -26,10 +36,26 @@ export async function sendEmail(opts: {
   text?:    string
 }): Promise<void> {
   const toAddresses = Array.isArray(opts.to) ? opts.to : [opts.to]
+  const from        = opts.from ?? `WealthBeginners <${FROM_EMAIL}>`
 
+  // ── Try Resend first (no sandbox, free tier, instant) ─────────────────────
+  const resend = getResend()
+  if (resend) {
+    const { error } = await resend.emails.send({
+      from,
+      to:      toAddresses,
+      subject: opts.subject,
+      html:    opts.html,
+      text:    opts.text ?? stripHtml(opts.html),
+    })
+    if (!error) return // success
+    console.warn('[email] Resend failed, falling back to SES:', error.message)
+  }
+
+  // ── Fall back to SES ───────────────────────────────────────────────────────
   await ses.send(
     new SendEmailCommand({
-      Source: opts.from ?? FROM_EMAIL,
+      Source: from,
       Destination: { ToAddresses: toAddresses },
       Message: {
         Subject: { Data: opts.subject, Charset: 'UTF-8' },
