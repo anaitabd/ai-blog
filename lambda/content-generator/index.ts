@@ -84,6 +84,49 @@ async function fetchLiveContext(keyword: string): Promise<LiveContext> {
   return { headlines, redditPosts }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  E-E-A-T auto-repair — inject missing placeholders before the quality gate
+//  so a formatting omission never burns a full retry.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ensureAnecdotes(content: string): string {
+  const count = (content.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
+  if (count >= 3) return content
+
+  const TEMPLATES = [
+    '\n[INSERT PERSONAL ANECDOTE: Share a personal story about first starting to invest or save with limited money — describe the exact first step and what it felt like to begin.]\n\n',
+    '\n[INSERT PERSONAL ANECDOTE: Share a relatable financial mistake or hard lesson connected to this topic — be specific so beginners know they are not alone.]\n\n',
+    '\n[INSERT PERSONAL ANECDOTE: Share a concrete win or "aha moment" — a specific dollar amount, a goal reached, or the first time you saw real financial progress.]\n\n',
+  ]
+
+  // Collect all ## H2 heading positions
+  const h2Positions: number[] = []
+  const h2Re = /^## /gm
+  let m: RegExpExecArray | null
+  while ((m = h2Re.exec(content)) !== null) h2Positions.push(m.index)
+
+  // Need at least 3 sections to inject safely
+  if (h2Positions.length < 3) return content
+
+  const needed = 3 - count
+  const spread = h2Positions.length
+  const rawIdx =
+    needed === 3 ? [0, Math.floor(spread / 2), spread - 1] :
+    needed === 2 ? [Math.floor(spread / 3), Math.floor(spread * 2 / 3)] :
+                   [Math.floor(spread / 2)]
+
+  // Insert back-to-front so earlier offsets are not shifted
+  const insertions = rawIdx
+    .map((idx, i) => ({ pos: h2Positions[Math.min(idx, spread - 1)], tpl: TEMPLATES[count + i] }))
+    .sort((a, b) => b.pos - a.pos)
+
+  let result = content
+  for (const { pos, tpl } of insertions) {
+    result = result.slice(0, pos) + tpl + result.slice(pos)
+  }
+  return result
+}
+
 export const handler = async (event: Event) => {
   const {
     topicId, keyword, category, retryCount = 0,
@@ -112,16 +155,27 @@ export const handler = async (event: Event) => {
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'start', pct: 10,
       meta: { keyword, attempt } })
 
-    const article = await callBedrock(
+    const rawArticle = await callBedrock(
       keyword, category, retryCount > 0,
       relatedArticle, leadMagnet,
       { trendScore, relatedTrends, originalQuery, liveContext, qualityIssues, qualityWarnings },
     )
 
-    log({ lambda: 'content-generator', step: 'bedrock-call', status: 'complete', pct: 70,
+    // ── Step 3: Auto-repair E-E-A-T placeholders ──────────────────────────
+    // Inject any missing [INSERT PERSONAL ANECDOTE] markers before the quality
+    // gate runs — prevents a pure formatting omission from burning a retry.
+    const repairedContent = ensureAnecdotes(rawArticle.content as string)
+    const article = { ...rawArticle, content: repairedContent }
+
+    const beforeCount = (String(rawArticle.content).match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
+    const afterCount  = (repairedContent.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
+    log({ lambda: 'content-generator', step: 'anecdote-repair', status: 'complete', pct: 72,
+      meta: { before: beforeCount, after: afterCount, injected: afterCount - beforeCount } })
+
+    log({ lambda: 'content-generator', step: 'bedrock-call', status: 'complete', pct: 72,
       meta: { titleLength: (article.title as string)?.length, contentWords: (article.content as string)?.trim().split(/\s+/).length } })
 
-    // ── Step 2: Quality gate ─────────────────────────────────────────────
+    // ── Step 4: Quality gate ──────────────────────────────────────────────
     await updateTopicStep(topicId, `Quality check · attempt ${attempt}/3`, dynamo, process.env.TOPICS_TABLE!)
     log({ lambda: 'content-generator', step: 'quality-gate', status: 'start', pct: 75 })
 
@@ -376,9 +430,10 @@ RULE 4 — HUMAN-FIRST SEO & INTERNAL LINKING
   Example: "If you're also working on cutting expenses, our guide on [related topic] walks you through exactly how to do it."
 - Use 2–3 LSI keywords (related terms) throughout — do NOT repeat exact keyword more than 4 times
 
-RULE 5 — E-E-A-T PLACEHOLDERS (Critical — do NOT skip)
-Insert exactly 3 personal anecdote placeholders throughout the article.
-Format them EXACTLY like this:
+RULE 5 — E-E-A-T PLACEHOLDERS ⚠️ CRITICAL — THE #1 REJECTION REASON
+Insert EXACTLY 3 personal anecdote placeholders. This is NON-NEGOTIABLE.
+If you write 0, 1, or 2 placeholders, the article is automatically rejected.
+Format them EXACTLY like this (copy this format character-for-character):
 
 [INSERT PERSONAL ANECDOTE: Tell me what specific relatable struggle or
 financial win I should share here to build trust with a beginner.
@@ -447,15 +502,15 @@ SEO METADATA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SELF-CHECK BEFORE RESPONDING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Before writing the JSON, verify:
+Before writing the JSON, count and verify each item:
 □ Word count is between 1,500 and 1,900 words
-□ Zero banned words used (delve, tapestry, crucial, etc.)
+□ Zero banned words used (delve, tapestry, crucial, leverage, utilize, etc.)
 □ First sentence is a hook — not a generic intro
-□ Exactly 3 E-E-A-T anecdote placeholders inserted
-□ At least 3 callout boxes (💡 ⚠️ 📊)
-□ Natural internal link to related article in the middle
+□ E-E-A-T: count your [INSERT PERSONAL ANECDOTE] markers → must equal exactly 3
+□ Callout boxes: at least one 💡, one ⚠️, one 📊 — three total minimum
+□ Natural internal link sentence to related article in the middle
 □ Article ends with CTA — nothing written after it
-□ At least 3 real statistics with source names
+□ At least 3 real statistics with source names cited
 □ Meta title is 50–60 characters
 □ Meta description is 145–158 characters
 □ No "In conclusion", "To summarize", "Remember that"
@@ -504,7 +559,10 @@ async function callBedrock(
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 10000,
-      temperature: 0.7,
+      // Lower temperature = more rule-following. Retries near-deterministic
+      // so the model doesn't repeat the same structural mistakes.
+      temperature: isRetry ? 0.2 : 0.4,
+      top_p: 0.9,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
@@ -553,7 +611,8 @@ function checkQuality(content: string) {
   }
   if (foundBanned.length > 0) {
     warnings.push(`Banned AI words found: ${foundBanned.join(', ')} — regenerate`)
-    score -= foundBanned.length * 5
+    // Cap at -20 so a noisy response doesn't tank an otherwise good article
+    score -= Math.min(foundBanned.length * 5, 20)
   }
 
   // ── Generic intro check (Rule 2) ──────────────────────────────────────
@@ -602,17 +661,28 @@ function checkQuality(content: string) {
   }
 
   // ── Internal Link (Rule 4) ─────────────────────────────────────────────
-  const hasInternalLink = /\[INTERNAL_LINK:/i.test(content) || /wealthbeginners\.com\//i.test(content)
+  // Match [INTERNAL_LINK:], wealthbeginners.com/, any markdown link, or the
+  // natural link phrases the prompt explicitly tells the model to write.
+  const hasInternalLink =
+    /\[INTERNAL_LINK:/i.test(content) ||
+    /wealthbeginners\.com\//i.test(content) ||
+    /\[.+?\]\(.+?\)/.test(content) ||
+    /our (guide|article|post) on|check out our|we (cover|walk you through)/i.test(content)
   if (!hasInternalLink) {
-    warnings.push('No internal link placeholder found — add [INTERNAL_LINK: topic] in the middle')
+    warnings.push('No internal link found — add a natural link to a related WealthBeginners article in the middle')
     score -= 8
   }
 
   // ── E-E-A-T Placeholders (Rule 5) ─────────────────────────────────────
+  // Hard failure ONLY when the model wrote zero (complete rule skip).
+  // 1–2 is a warning — ensureAnecdotes() above already auto-injected the rest.
   const anecdoteCount = (content.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
-  if (anecdoteCount < 3) {
-    issues.push(`Only ${anecdoteCount} E-E-A-T placeholders (need exactly 3 — Google requires Experience signals)`)
-    score -= 20
+  if (anecdoteCount === 0) {
+    issues.push('No E-E-A-T placeholders found — need exactly 3 [INSERT PERSONAL ANECDOTE: …] markers')
+    score -= 25
+  } else if (anecdoteCount < 3) {
+    warnings.push(`Only ${anecdoteCount} E-E-A-T placeholder(s) found — auto-repair added the rest`)
+    score -= 8
   }
 
   // ── Real Data (supporting Rule 4) ─────────────────────────────────────
@@ -644,7 +714,9 @@ function checkQuality(content: string) {
   }
 
   return {
-    passed: issues.length === 0 && score >= 60,
+    // Hard issues (word count, H2 count, zero E-E-A-T) are the real gates.
+    // Threshold 50 so advisory warnings don't block an otherwise good article.
+    passed: issues.length === 0 && score >= 50,
     wordCount,
     score: Math.max(0, score),
     issues,

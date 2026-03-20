@@ -1,4 +1,4 @@
-import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb'
+import { DynamoDBClient, PutItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb'
 import { randomUUID } from 'crypto'
 
 const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION })
@@ -72,6 +72,18 @@ export const handler = async () => {
 
   for (const topic of TOPICS) {
     try {
+      // Skip if this keyword already exists in any status
+      const existing = await dynamo.send(
+        new QueryCommand({
+          TableName: process.env.TOPICS_TABLE!,
+          IndexName: 'keyword-index',
+          KeyConditionExpression: 'keyword = :kw',
+          ExpressionAttributeValues: { ':kw': { S: topic.keyword } },
+          Limit: 1,
+        })
+      )
+      if ((existing.Count ?? 0) > 0) { skipped++; continue }
+
       await dynamo.send(
         new PutItemCommand({
           TableName: process.env.TOPICS_TABLE!,
