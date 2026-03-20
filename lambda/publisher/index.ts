@@ -115,18 +115,21 @@ export const handler = async (event: Event) => {
     throw new Error(`Webhook failed: ${res.status} — ${errText}`)
   }
 
-  const result = await res.json() as { postId: string }
+  const result = await res.json() as { postId: string; postStatus?: string; postCategory?: string; postReadingTime?: number }
   await updateTopic(topicId, 'DONE')
-  await updateTopicStep(topicId, `Published — postId: ${result.postId}`, dynamo, process.env.TOPICS_TABLE!)
+  await updateTopicStep(topicId, `In review — postId: ${result.postId}`, dynamo, process.env.TOPICS_TABLE!)
 
   log({ lambda: 'publisher', step: 'done', status: 'complete', pct: 100,
-    meta: { postId: result.postId, slug: article.slug } })
+    meta: { postId: result.postId, slug: article.slug, postStatus: result.postStatus } })
 
   const siteUrl = (process.env.NEXTJS_SITE_URL ?? '').replace(/\/$/, '')
   return {
-    success:     true,
-    postId:      result.postId,
-    slug:        article.slug,
+    success:         true,
+    postId:          result.postId,
+    slug:            article.slug,
+    postStatus:      result.postStatus ?? 'REVIEW',
+    postCategory:    result.postCategory ?? '',
+    postReadingTime: result.postReadingTime ?? 0,
     // Fields forwarded to parallel branches ──────────────────────────────
     title:       article.title,
     url:         `${siteUrl}/${article.slug}`,

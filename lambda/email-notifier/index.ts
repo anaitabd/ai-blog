@@ -26,10 +26,13 @@ const BATCH_DELAY_MS = 3_500   // 3.5 seconds — respect SES 14/s rate limit
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface NotifierEvent {
-  postId:      string
-  postTitle:   string
-  postUrl:     string
-  postExcerpt: string
+  postId:          string
+  postTitle:       string
+  postUrl:         string
+  postExcerpt:     string
+  postStatus?:     string   // 'PUBLISHED' | 'REVIEW' — skip if not PUBLISHED
+  postCategory?:   string
+  postReadingTime?: number
 }
 
 interface Subscriber {
@@ -40,10 +43,17 @@ interface Subscriber {
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 export const handler = async (event: NotifierEvent) => {
-  const { postId, postTitle, postUrl, postExcerpt } = event
+  const { postId, postTitle, postUrl, postExcerpt, postStatus, postCategory, postReadingTime } = event
 
   log({ lambda: 'email-notifier', step: 'handler-start', status: 'start', pct: 0,
-    meta: { postId, postTitle } })
+    meta: { postId, postTitle, postStatus } })
+
+  // Only notify subscribers when the post is actually PUBLISHED
+  if (postStatus && postStatus !== 'PUBLISHED') {
+    log({ lambda: 'email-notifier', step: 'skip-review', status: 'skip', pct: 100,
+      meta: { postId, postStatus } })
+    return { sent: 0, skipped: `post is ${postStatus} — awaiting manual review` }
+  }
 
   try {
     // ── Load SSM params ────────────────────────────────────────────────────
@@ -79,11 +89,14 @@ export const handler = async (event: NotifierEvent) => {
       const results = await Promise.allSettled(
         batch.map((sub) =>
           sendPostNotification({
-            to:          sub.email,
+            to:              sub.email,
+            name:            sub.name,
             fromEmail,
             postTitle,
             postExcerpt,
             postUrl,
+            postCategory:    postCategory ?? '',
+            postReadingTime: postReadingTime ?? 0,
           }),
         ),
       )
@@ -139,69 +152,176 @@ async function fetchActiveSubscribers(baseUrl: string, secret: string): Promise<
 //  Send a single new-post notification
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendPostNotification(opts: {
-  to:          string
-  fromEmail:   string
-  postTitle:   string
-  postExcerpt: string
-  postUrl:     string
+  to:              string
+  name:            string
+  fromEmail:       string
+  postTitle:       string
+  postExcerpt:     string
+  postUrl:         string
+  postCategory:    string
+  postReadingTime: number
 }): Promise<void> {
-  const { to, fromEmail, postTitle, postExcerpt, postUrl } = opts
+  const { to, name, fromEmail, postTitle, postExcerpt, postUrl, postCategory, postReadingTime } = opts
   const siteUrl  = 'https://wealthbeginners.com'
   const unsubUrl = `${siteUrl}/unsubscribe?email=${encodeURIComponent(to)}`
 
+  // Use no-reply@ on the verified domain so recipients can't reply
+  const domain      = fromEmail.includes('@') ? fromEmail.split('@')[1] : 'wealthbeginners.com'
+  const noreply     = `noreply@${domain}`
+  const displayName = 'WealthBeginners'
+
+  const greeting   = name && name.trim() ? `Hi ${name.split(' ')[0]},` : 'Hi there,'
+  const readLabel  = postReadingTime > 0 ? `${postReadingTime} min read` : '7 min read'
+  const catLabel   = postCategory   || 'Personal Finance'
+  const year       = new Date().getFullYear()
+
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${postTitle}</title></head>
-<body style="margin:0;padding:0;background:#F5F5F5;font-family:'DM Sans',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;padding:40px 20px;">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>${postTitle}</title>
+</head>
+<body style="margin:0;padding:0;background:#EDEBE6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+
+  <!-- PREVIEW TEXT -->
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#EDEBE6;">
+    ${postExcerpt.slice(0, 130)}&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;
+  </div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#EDEBE6;padding:40px 16px;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#0B1628;border-radius:16px;overflow:hidden;max-width:600px;width:100%;">
-        <tr>
-          <td style="padding:32px 40px 20px;background:#162035;text-align:center;">
-            <img src="${siteUrl}/brand/logo-primary.svg" alt="Wealth Beginners" width="160" style="display:block;margin:0 auto;" />
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:24px 40px 0;">
-            <span style="background:#C9A84C;color:#0B1628;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;padding:4px 12px;border-radius:20px;">New Post</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:16px 40px 32px;">
-            <h1 style="color:#FAF8F3;font-size:24px;font-weight:700;margin:0 0 12px;font-family:Georgia,serif;line-height:1.3;">${postTitle}</h1>
-            <p style="color:rgba(250,248,243,0.7);font-size:15px;line-height:1.6;margin:0 0 28px;">${postExcerpt}</p>
-            <table cellpadding="0" cellspacing="0">
-              <tr>
-                <td style="background:#C9A84C;border-radius:10px;padding:13px 28px;">
-                  <a href="${postUrl}" style="color:#0B1628;font-size:14px;font-weight:700;text-decoration:none;display:block;">Read Full Post →</a>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:20px 40px;border-top:1px solid rgba(255,255,255,0.1);text-align:center;">
-            <p style="color:rgba(250,248,243,0.4);font-size:12px;margin:0;">
-              Wealth Beginners · wealthbeginners.com<br>
-              <a href="${unsubUrl}" style="color:#C9A84C;text-decoration:underline;">Unsubscribe</a>
-            </p>
-          </td>
-        </tr>
-      </table>
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+      <!-- ── HEADER ─────────────────────────────────────────── -->
+      <tr>
+        <td style="background:#0B1628;border-radius:14px 14px 0 0;padding:26px 40px 22px;text-align:center;">
+          <p style="margin:0 0 4px;color:#C9A84C;font-size:13px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">WEALTHBEGINNERS</p>
+          <p style="margin:0;color:rgba(255,255,255,0.38);font-size:11px;letter-spacing:0.06em;">Smart money · simplified</p>
+        </td>
+      </tr>
+      <!-- gold accent line -->
+      <tr><td style="background:linear-gradient(90deg,#C9A84C 0%,#E8C96B 50%,#C9A84C 100%);height:3px;"></td></tr>
+
+      <!-- ── BODY ────────────────────────────────────────────── -->
+      <tr>
+        <td style="background:#FFFFFF;padding:40px 40px 32px;">
+
+          <!-- "New Article" badge -->
+          <table cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            <tr>
+              <td style="background:#FEF9EC;border:1px solid #F0D97A;border-radius:20px;padding:5px 14px;">
+                <span style="color:#92712A;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;">✦ New Article</span>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Greeting -->
+          <p style="color:#374151;font-size:15px;margin:0 0 6px;font-weight:600;">${greeting}</p>
+          <p style="color:#6B7280;font-size:14px;line-height:1.65;margin:0 0 28px;">We just published a new guide. Here's everything you need to know:</p>
+
+          <!-- ── Article Card ───────────────────────────────────── -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F7F4;border:1px solid #E5E2DC;border-left:4px solid #C9A84C;border-radius:0 10px 10px 0;margin-bottom:28px;">
+            <tr>
+              <td style="padding:24px 26px 20px;">
+                <!-- Category + read time pill row -->
+                <table cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+                  <tr>
+                    <td style="background:#0B1628;border-radius:4px;padding:3px 10px;margin-right:8px;">
+                      <span style="color:#C9A84C;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;">${catLabel}</span>
+                    </td>
+                    <td width="10"></td>
+                    <td style="background:#F0EDE8;border-radius:4px;padding:3px 10px;">
+                      <span style="color:#6B7280;font-size:10px;font-weight:600;letter-spacing:0.06em;">⏱ ${readLabel}</span>
+                    </td>
+                  </tr>
+                </table>
+                <!-- Title -->
+                <h1 style="color:#0B1628;font-size:21px;font-weight:700;line-height:1.3;margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;">${postTitle}</h1>
+                <!-- Excerpt -->
+                <p style="color:#6B7280;font-size:14px;line-height:1.7;margin:0;">${postExcerpt}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:4px 26px 24px;">
+                <table cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="background:#0B1628;border-radius:8px;">
+                      <a href="${postUrl}" style="display:block;color:#C9A84C;font-size:13px;font-weight:700;text-decoration:none;padding:11px 24px;letter-spacing:0.03em;">Read the Full Guide →</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+
+          <!-- ── "What you'll learn" callout ───────────────────── -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFBF0;border:1px solid #F3E8C0;border-radius:10px;margin-bottom:28px;">
+            <tr>
+              <td style="padding:18px 22px;">
+                <p style="color:#92712A;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 6px;">In this guide</p>
+                <p style="color:#5C4A1E;font-size:13px;line-height:1.65;margin:0;">Practical, step-by-step strategies with real numbers you can act on today — written for beginners, no financial jargon.</p>
+              </td>
+            </tr>
+          </table>
+
+          <p style="color:#D1CFC9;font-size:11px;text-align:center;margin:0;">You received this because you subscribed to WealthBeginners updates.</p>
+        </td>
+      </tr>
+
+      <!-- ── FOOTER ──────────────────────────────────────────── -->
+      <tr>
+        <td style="background:#0B1628;border-radius:0 0 14px 14px;padding:22px 40px;text-align:center;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td align="center" style="padding-bottom:10px;">
+                <a href="${siteUrl}" style="color:#C9A84C;font-size:11px;font-weight:700;text-decoration:none;letter-spacing:0.1em;text-transform:uppercase;margin:0 12px;">Visit Website</a>
+                <span style="color:rgba(255,255,255,0.2);font-size:11px;">|</span>
+                <a href="${siteUrl}/blog" style="color:rgba(255,255,255,0.45);font-size:11px;text-decoration:none;margin:0 12px;">All Articles</a>
+                <span style="color:rgba(255,255,255,0.2);font-size:11px;">|</span>
+                <a href="${unsubUrl}" style="color:rgba(255,255,255,0.35);font-size:11px;text-decoration:underline;margin:0 12px;">Unsubscribe</a>
+              </td>
+            </tr>
+            <tr>
+              <td align="center">
+                <p style="color:rgba(255,255,255,0.25);font-size:10px;margin:0;letter-spacing:0.04em;">© ${year} WealthBeginners.com · This email was sent from a no-reply address.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+    </table>
     </td></tr>
   </table>
 </body>
 </html>`
 
+  const plainText = [
+    `${postTitle}`,
+    ``,
+    `${catLabel} · ${readLabel}`,
+    ``,
+    postExcerpt,
+    ``,
+    `Read the full guide: ${postUrl}`,
+    ``,
+    `─────────────────────────────`,
+    `WealthBeginners.com`,
+    `This email was sent from a no-reply address.`,
+    `Unsubscribe: ${unsubUrl}`,
+  ].join('\n')
+
   const input: SendEmailCommandInput = {
-    Source: `Wealth Beginners <${fromEmail}>`,
+    Source: `${displayName} <${noreply}>`,
+    ReplyToAddresses: [noreply],
     Destination: { ToAddresses: [to] },
     Message: {
-      Subject: { Data: `New: ${postTitle}`, Charset: 'UTF-8' },
+      Subject: { Data: `New on WealthBeginners: ${postTitle}`, Charset: 'UTF-8' },
       Body: {
-        Html: { Data: html, Charset: 'UTF-8' },
-        Text: { Data: `${postTitle}\n\n${postExcerpt}\n\nRead more: ${postUrl}\n\nUnsubscribe: ${unsubUrl}`, Charset: 'UTF-8' },
+        Html: { Data: html,      Charset: 'UTF-8' },
+        Text: { Data: plainText, Charset: 'UTF-8' },
       },
     },
   }

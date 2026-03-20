@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
     const wordCount   = incomingWordCount  ?? quality.wordCount
     const readingTime = incomingReadingTime ?? calcReadingTime(wordCount)
 
-    // ── Step 6: Save to DB as PUBLISHED ────────────────────────────────
+    // ── Step 6: Save to DB as REVIEW (awaits manual approval) ─────────────
     const post = await prisma.post.create({
       data: {
         title:        data.title,
@@ -212,19 +212,24 @@ export async function POST(req: NextRequest) {
         tags:         { connect: tagRecords.map((t) => ({ id: t.id })) },
         wordCount,
         readingTime,
-        status:       'PUBLISHED',
-        publishedAt:  new Date(),
+        status:       'REVIEW',   // ← manual review before going live
       },
       include: { category: true, tags: true },
     })
 
-    revalidatePath('/')
-    revalidatePath('/blog')
-    revalidatePath('/sitemap.xml')
-    revalidatePath(`/category/${category.slug}`)
-    revalidatePath(`/${post.slug}`)
+    // Only revalidate admin paths — post is not live yet
+    revalidatePath('/admin')
+    revalidatePath('/admin/posts')
 
-    return NextResponse.json({ success: true, postId: post.id, slug: post.slug, post })
+    return NextResponse.json({
+      success: true,
+      postId: post.id,
+      slug: post.slug,
+      post,
+      postStatus: 'REVIEW',           // ← tells Step Functions to skip email/YouTube
+      postCategory: category.name,
+      postReadingTime: readingTime,
+    })
   } catch (err) {
     console.error('Publish webhook error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

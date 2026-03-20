@@ -346,7 +346,13 @@ export class AiBlogStack extends cdk.Stack {
     postPublishParallel.next(successState)
     postPublishParallel.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.parallelError' })
 
-    publishStep.next(postPublishParallel)
+    // Only run YouTube + email when the post is actually PUBLISHED.
+    // Pipeline now saves as REVIEW by default — skip post-publish work.
+    const reviewGuard = new sfn.Choice(this, 'ReviewGuard')
+      .when(sfn.Condition.stringEquals('$.postStatus', 'PUBLISHED'), postPublishParallel)
+      .otherwise(successState)
+
+    publishStep.next(reviewGuard)
     generateStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
     publishStep.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.error' })
 
