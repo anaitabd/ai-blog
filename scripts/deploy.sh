@@ -73,8 +73,8 @@ if [ ${#MISSING_PARAMS[@]} -gt 0 ]; then
 fi
 ok "All SSM parameters present."
 
-# ── Step 2: Write INTERNAL_SECRET to SSM ─────────────────────────────────────
-info "Step 2/9 — Syncing INTERNAL_SECRET to SSM…"
+# ── Step 2: Write secrets to SSM ─────────────────────────────────────────────
+info "Step 2/9 — Syncing secrets to SSM…"
 if [ -z "${INTERNAL_SECRET:-}" ]; then
   error "INTERNAL_SECRET is not set in .env"
 fi
@@ -82,7 +82,15 @@ aws ssm put-parameter \
   --name "/wealthbeginners/internal-secret" \
   --value "$INTERNAL_SECRET" \
   --type SecureString --overwrite --region "$REGION" > /dev/null
-ok "INTERNAL_SECRET synced."
+
+if [ -z "${WEBHOOK_SECRET:-}" ]; then
+  error "WEBHOOK_SECRET is not set in .env"
+fi
+aws ssm put-parameter \
+  --name "/wealthbeginners/webhook-secret" \
+  --value "$WEBHOOK_SECRET" \
+  --type SecureString --overwrite --region "$REGION" > /dev/null
+ok "Secrets synced to SSM."
 
 # ── Step 3: Install dependencies ─────────────────────────────────────────────
 info "Step 3/9 — Installing dependencies…"

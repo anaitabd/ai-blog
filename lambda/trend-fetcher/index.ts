@@ -9,29 +9,109 @@ import { log } from '../shared/logger'
 const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION })
 const TABLE  = process.env.TOPICS_TABLE!
 
-// Expanded seed queries — 20 personal-finance topics
-const FINANCE_QUERIES = [
-  'budgeting tips',
-  'invest for beginners',
-  'pay off debt fast',
-  'emergency fund',
-  'passive income ideas',
-  'credit score improve',
-  'retirement savings',
-  'frugal living',
-  'stock market basics',
-  'side hustle ideas',
-  'high yield savings account',
-  'index fund investing',
-  'how to start investing',
-  'dividend investing',
-  'real estate investing beginners',
-  'tax saving strategies',
-  'financial freedom',
-  'money market account',
-  '401k vs roth ira',
-  'how to negotiate salary',
+// ─── Finance relevance detection ─────────────────────────────────────────────
+const FINANCE_INDICATORS = [
+  'budget', 'invest', 'debt', 'credit', 'sav', 'income', 'money', 'loan',
+  'mortgage', 'tax', 'retire', 'stock', 'fund', 'salary', 'earn', 'bank',
+  'insurance', 'wealth', 'financ', 'inflation', 'interest rate',
+  'recession', 'market', 'side hustle', 'passive income', 'paycheck',
+  'emergency fund', 'roth', '401k', 'ira', 'dividend', 'real estate',
 ]
+
+function isFinanceRelated(text: string): boolean {
+  const lower = text.toLowerCase()
+  return FINANCE_INDICATORS.some((ind) => lower.includes(ind))
+}
+
+// ─── RSS feeds for live financial news ───────────────────────────────────────
+function getFinanceRssFeeds(): string[] {
+  const year = new Date().getFullYear()
+  return [
+    `https://news.google.com/rss/search?q=personal+finance+tips+${year}&hl=en-US&gl=US&ceid=US:en`,
+    `https://news.google.com/rss/search?q=investing+for+beginners+${year}&hl=en-US&gl=US&ceid=US:en`,
+    `https://news.google.com/rss/search?q=credit+score+debt+payoff+${year}&hl=en-US&gl=US&ceid=US:en`,
+    `https://news.google.com/rss/search?q=budgeting+saving+money+${year}&hl=en-US&gl=US&ceid=US:en`,
+    'https://feeds.finance.yahoo.com/rss/2.0/headline?s=personal-finance&region=US&lang=en-US',
+    'https://www.cnbc.com/id/10000664/device/rss/rss.html',
+  ]
+}
+
+async function fetchNewsHeadlines(): Promise<string[]> {
+  const headlines: string[] = []
+  for (const feedUrl of getFinanceRssFeeds()) {
+    try {
+      const res = await fetch(feedUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WealthBeginners/1.0)' },
+        signal: AbortSignal.timeout(5000),
+      })
+      const xml = await res.text()
+      const cdataRe = /<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>/g
+      const plainRe  = /<item>[\s\S]*?<title>(.*?)<\/title>/g
+      for (const re of [cdataRe, plainRe]) {
+        for (const m of xml.matchAll(re)) {
+          const t = m[1]?.replace(/<[^>]*>/g, '').trim()
+          if (t && t.length > 10 && isFinanceRelated(t)) headlines.push(t)
+          if (headlines.length >= 40) break
+        }
+        if (headlines.length >= 40) break
+      }
+    } catch { /* skip feed */ }
+  }
+  return [...new Set(headlines)].slice(0, 40)
+}
+
+async function fetchDailyTrendSeeds(): Promise<string[]> {
+  const seeds: string[] = []
+  try {
+    const raw = await (googleTrends as any).dailyTrends({ geo: 'US', hl: 'en-US' })
+    const parsed = JSON.parse(raw)
+    for (const day of (parsed?.default?.trendingSearchesDays ?? []).slice(0, 2)) {
+      for (const t of day?.trendingSearches ?? []) {
+        const q = t?.title?.query?.trim()
+        if (q && isFinanceRelated(q)) seeds.push(q)
+      }
+    }
+  } catch { /* skip */ }
+  return seeds
+}
+
+/**
+ * Build dynamic query seeds from live data.
+ * Priority: Google Trends daily trending (finance-filtered) → news headlines.
+ * Falls back to minimal evergreen queries only if all live sources fail.
+ */
+async function buildDynamicQueries(headlines: string[]): Promise<string[]> {
+  const seeds = new Set<string>()
+
+  // 1. Finance-relevant Google Trends daily trending searches
+  for (const s of await fetchDailyTrendSeeds()) seeds.add(s)
+
+  // 2. Convert news headlines to search-style queries
+  for (const h of headlines) {
+    // Strip source attribution: "How to save money — CNBC" → "how to save money"
+    const query = h
+      .replace(/\s*[-–—|]\s*[A-Z].*$/, '')
+      .trim()
+      .toLowerCase()
+      .slice(0, 60)
+    if (query.split(/\s+/).length >= 2 && query.length >= 8) seeds.add(query)
+    if (seeds.size >= 30) break
+  }
+
+  const result = [...seeds].slice(0, 20)
+  if (result.length < 5) {
+    // Guaranteed evergreen fallback — only reached if all HTTP calls fail
+    const year = new Date().getFullYear()
+    return [
+      `investing for beginners ${year}`,
+      `how to get out of debt fast`,
+      `improve credit score fast`,
+      `best budgeting methods ${year}`,
+      `passive income ideas ${year}`,
+    ]
+  }
+  return result
+}
 
 const PROHIBITED_KEYWORDS = [
   /casino|gambling|poker|bet/i,
@@ -177,15 +257,20 @@ async function processTrendItem(
 
 export const handler = async () => {
   log({ lambda: 'trend-fetcher', step: 'handler-start', status: 'start', pct: 0,
-    meta: { queriesTotal: FINANCE_QUERIES.length } })
+    meta: { queriesTotal: 0 } })
 
   const saved: string[] = []
   const skipped: string[] = []
   const errors: string[] = []
-  const total = FINANCE_QUERIES.length
 
+  // Build dynamic query seeds from live data
+  const dynamicQueries = await buildDynamicQueries(await fetchNewsHeadlines())
+  log({ lambda: 'trend-fetcher', step: 'dynamic-queries', status: 'complete', pct: 10,
+    meta: { queriesTotal: dynamicQueries.length } })
+
+  const total = dynamicQueries.length
   for (let i = 0; i < total; i++) {
-    const query = FINANCE_QUERIES[i]
+    const query = dynamicQueries[i]
     const pct   = Math.round(((i + 1) / total) * 100)
 
     log({ lambda: 'trend-fetcher', step: 'fetch-query', status: 'start', pct,
@@ -226,4 +311,3 @@ export const handler = async () => {
 
   return { saved, skipped, errors }
 }
-

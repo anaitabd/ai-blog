@@ -1,11 +1,30 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb'
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
 import { log, updateTopicStep } from '../shared/logger'
 
-const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION })
-const s3      = new S3Client({ region: process.env.AWS_REGION })
-const dynamo  = new DynamoDBClient({ region: process.env.AWS_REGION })
+const bedrock   = new BedrockRuntimeClient({ region: process.env.AWS_REGION })
+const s3        = new S3Client({ region: process.env.AWS_REGION })
+const dynamo    = new DynamoDBClient({ region: process.env.AWS_REGION })
+const ssmClient = new SSMClient({ region: process.env.AWS_REGION })
+
+// Cache so we only hit SSM once per cold start
+let _webhookSecret: string | undefined
+async function getWebhookSecret(): Promise<string> {
+  if (_webhookSecret !== undefined) return _webhookSecret
+  try {
+    const { Parameter } = await ssmClient.send(new GetParameterCommand({
+      Name: '/wealthbeginners/webhook-secret',
+      WithDecryption: true,
+    }))
+    _webhookSecret = Parameter?.Value ?? ''
+  } catch (err) {
+    console.warn('SSM getWebhookSecret failed, falling back to env:', String(err))
+    _webhookSecret = process.env.WEBHOOK_SECRET ?? ''
+  }
+  return _webhookSecret
+}
 
 interface Event {
   topicId: string
@@ -55,11 +74,12 @@ export const handler = async (event: Event) => {
   await updateTopicStep(topicId, 'Publishing to Next.js…', dynamo, process.env.TOPICS_TABLE!)
   log({ lambda: 'publisher', step: 'publish-webhook', status: 'start', pct: 55 })
 
+  const webhookSecret = await getWebhookSecret()
   const res = await fetch(`${process.env.NEXTJS_SITE_URL}/api/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      secret: process.env.WEBHOOK_SECRET,
+      secret: webhookSecret,
       title: article.title,
       slug: article.slug,
       excerpt: article.excerpt,

@@ -29,18 +29,6 @@ const NEWS_FEEDS = [
   'https://www.cnbc.com/id/10000664/device/rss/rss.html',
 ]
 
-const TREND_SEEDS = [
-  'personal finance tips',
-  'how to invest money',
-  'budget money 2026',
-  'pay off debt fast',
-  'side hustle ideas',
-  'credit score improve',
-  'retirement savings tips',
-  'passive income ideas',
-  'emergency fund tips',
-  'stock market beginners',
-]
 
 const REDDIT_SUBS = ['personalfinance', 'financialindependence', 'povertyfinance', 'investing', 'frugal']
 
@@ -93,10 +81,32 @@ async function fetchRedditPosts(): Promise<string[]> {
   return [...new Set(posts)].slice(0, 30)
 }
 
-async function fetchTrendingQueries(): Promise<string[]> {
+/**
+ * Derive short seed phrases from live RSS headlines for use as
+ * Google Trends relatedQueries seeds — no static list needed.
+ */
+function extractSeedQueries(headlines: string[], count = 5): string[] {
+  const seeds: string[] = []
+  const year = new Date().getFullYear()
+  for (const h of headlines) {
+    // Strip source attribution ("How to save money — CNBC" → "how to save money")
+    const clean = h.replace(/\s*[-–—|]\s*[A-Z].*$/, '').trim()
+    // Take first 5 words as a short search-style query
+    const phrase = clean.split(/\s+/).slice(0, 5).join(' ').toLowerCase().replace(/[^a-z0-9\s]/g, '').trim()
+    if (phrase.split(' ').length >= 2 && phrase.length >= 8) seeds.push(phrase)
+    if (seeds.length >= count) break
+  }
+  if (seeds.length === 0) {
+    // Last-resort fallback — only if all RSS feeds failed
+    return [`personal finance tips ${year}`, 'debt payoff strategies', 'credit score tips']
+  }
+  return seeds
+}
+
+async function fetchTrendingQueries(seeds: string[]): Promise<string[]> {
   const queries: string[] = []
   // Limit to 5 seeds to stay under Google Trends rate limit
-  for (const seed of TREND_SEEDS.slice(0, 5)) {
+  for (const seed of seeds.slice(0, 5)) {
     try {
       await sleep(1200)
       const raw = await (googleTrends as any).relatedQueries({ keyword: seed, geo: 'US', hl: 'en-US' })
@@ -208,15 +218,20 @@ async function isDuplicate(keyword: string): Promise<boolean> {
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export const handler = async () => {
-  console.log('🔍 Fetching live data sources in parallel…')
+  console.log('🔍 Fetching live data sources…')
 
-  const [headlines, redditPosts, trendingQueries] = await Promise.all([
+  // Step 1: Fetch headlines + Reddit in parallel (headlines drive trend seeds)
+  const [headlines, redditPosts] = await Promise.all([
     fetchRssHeadlines(),
     fetchRedditPosts(),
-    fetchTrendingQueries(),
   ])
 
-  console.log(`📰 Headlines: ${headlines.length} | 💬 Reddit: ${redditPosts.length} | 📈 Trends: ${trendingQueries.length}`)
+  // Step 2: Derive dynamic seeds from live headlines, then query Google Trends
+  const dynamicSeeds = extractSeedQueries(headlines)
+  console.log(`📰 Headlines: ${headlines.length} | 💬 Reddit: ${redditPosts.length} | 🌱 Seeds: ${dynamicSeeds.join(', ')}`)
+  const trendingQueries = await fetchTrendingQueries(dynamicSeeds)
+
+  console.log(`📈 Trends: ${trendingQueries.length}`)
 
   if (headlines.length === 0 && redditPosts.length === 0 && trendingQueries.length === 0) {
     console.error('All data sources empty — aborting')

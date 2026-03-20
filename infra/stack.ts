@@ -166,13 +166,17 @@ export class AiBlogStack extends cdk.Stack {
       environment: {
         ...sharedEnv,
         NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
-        WEBHOOK_SECRET: process.env.WEBHOOK_SECRET ?? '',
+        // WEBHOOK_SECRET is read from SSM at runtime — not embedded here
       },
     })
     publisherFn.addToRolePolicy(bedrockPolicy)
     publisherFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:PutObject'],
       resources: [`${imagesBucket.bucketArn}/*`],
+    }))
+    publisherFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/webhook-secret`],
     }))
     topicsTable.grantReadWriteData(publisherFn)
 
