@@ -561,8 +561,8 @@ async function callBedrock(
       max_tokens: 10000,
       // Lower temperature = more rule-following. Retries near-deterministic
       // so the model doesn't repeat the same structural mistakes.
+      // NOTE: Claude Sonnet 4.5 does not allow temperature + top_p together.
       temperature: isRetry ? 0.2 : 0.4,
-      top_p: 0.9,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
