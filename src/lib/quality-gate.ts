@@ -111,10 +111,15 @@ export function runQualityGate(content: string): QualityReport {
   }
 
   // ── E-E-A-T Placeholders (Rule 5) ─────────────────────────────────────
+  // Hard failure ONLY when the model wrote zero (complete rule skip).
+  // 1–2 is a warning — ensureAnecdotes() in the Lambda already auto-injected the rest.
   const anecdoteCount = (content.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
-  if (anecdoteCount < 3) {
+  if (anecdoteCount === 0) {
     issues.push(`Only ${anecdoteCount} E-E-A-T placeholders (need exactly 3 — Google requires Experience signals)`)
     score -= 20
+  } else if (anecdoteCount < 3) {
+    warnings.push(`Only ${anecdoteCount} E-E-A-T placeholder(s) — auto-repair injected the rest`)
+    score -= 5
   }
 
   // ── Real Data (supporting Rule 4) ─────────────────────────────────────

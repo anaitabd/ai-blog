@@ -78,10 +78,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // ── Step 1: Sanitize placeholder text ──────────────────────────────
-    data.content = sanitizePostContent(data.content)
-
-    // ── Step 2: Quality gate ────────────────────────────────────────────
+    // ── Step 1: Quality gate — run on raw content BEFORE sanitizing ────
+    // sanitizePostContent() strips [INSERT PERSONAL ANECDOTE: ...] markers,
+    // so the quality gate must see the original content first.
     const quality = runQualityGate(data.content)
     if (!quality.passed) {
       return NextResponse.json(
@@ -89,6 +88,9 @@ export async function POST(req: NextRequest) {
         { status: 422 }
       )
     }
+
+    // ── Step 2: Sanitize placeholder text ──────────────────────────────
+    data.content = sanitizePostContent(data.content)
 
     // ── Step 3: Image — try Pexels first, fall back to lambda's image ───
     let finalImage = data.featuredImage
