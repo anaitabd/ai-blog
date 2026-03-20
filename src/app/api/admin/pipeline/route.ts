@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DynamoDBClient, QueryCommand, ScanCommand } from '@aws-sdk/client-dynamodb'
+import { DynamoDBClient, QueryCommand, ScanCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb'
 
 const REGION = process.env.REGION ?? 'us-east-1'
 const _creds = process.env.APP_KEY_ID
@@ -98,3 +98,43 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load pipeline', detail: msg }, { status: 500 })
   }
 }
+
+// ── PATCH /api/admin/pipeline — reset all FAILED topics → PENDING ─────────────
+export async function PATCH(req: NextRequest) {
+  const apiKey = req.headers.get('x-admin-key')
+  if (apiKey !== process.env.ADMIN_API_KEY) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const scanRes = await dynamo.send(new ScanCommand({
+      TableName: TABLE,
+      FilterExpression: '#s = :failed',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: { ':failed': { S: 'FAILED' } },
+    }))
+
+    const items = scanRes.Items ?? []
+    if (items.length === 0) {
+      return NextResponse.json({ reset: 0, message: 'No failed topics found' })
+    }
+
+    await Promise.all(
+      items.map((item) =>
+        dynamo.send(new UpdateItemCommand({
+          TableName: TABLE,
+          Key: { id: { S: item.id.S! } },
+          UpdateExpression: 'SET #s = :pending REMOVE failReason, processedAt, processingAt, currentStep',
+          ExpressionAttributeNames: { '#s': 'status' },
+          ExpressionAttributeValues: { ':pending': { S: 'PENDING' } },
+        }))
+      )
+    )
+
+    return NextResponse.json({ reset: items.length, keywords: items.map((i) => i.keyword?.S ?? '') })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: 'Failed to reset topics', detail: msg }, { status: 500 })
+  }
+}
+

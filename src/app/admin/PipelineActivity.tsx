@@ -154,6 +154,8 @@ export default function PipelineActivity() {
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [retrying, setRetrying]       = useState(false)
+  const [retryMsg, setRetryMsg]       = useState<string | null>(null)
 
   const fetchPipeline = useCallback(async () => {
     try {
@@ -170,6 +172,22 @@ export default function PipelineActivity() {
     }
   }, [])
 
+  const retryFailed = useCallback(async () => {
+    setRetrying(true)
+    setRetryMsg(null)
+    try {
+      const res = await fetch('/api/admin/pipeline', { method: 'PATCH' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setRetryMsg(`✓ ${data.reset} topic${data.reset !== 1 ? 's' : ''} re-queued`)
+      await fetchPipeline()
+    } catch (err) {
+      setRetryMsg(`✗ ${String(err)}`)
+    } finally {
+      setRetrying(false)
+    }
+  }, [fetchPipeline])
+
   useEffect(() => {
     fetchPipeline()
     const id = setInterval(fetchPipeline, POLL_INTERVAL_MS)
@@ -177,6 +195,7 @@ export default function PipelineActivity() {
   }, [fetchPipeline])
 
   const running  = items.filter((i) => i.status === 'PROCESSING').length
+  const failed   = items.filter((i) => i.status === 'FAILED').length
   const finished = items.filter((i) => i.status !== 'PROCESSING').length
 
   return (
@@ -195,6 +214,20 @@ export default function PipelineActivity() {
         <div className="flex items-center gap-3">
           {lastUpdated && (
             <span className="text-xs text-muted">Updated {elapsed(lastUpdated)}</span>
+          )}
+          {retryMsg && (
+            <span className={`text-xs font-medium ${retryMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>
+              {retryMsg}
+            </span>
+          )}
+          {failed > 0 && (
+            <button
+              onClick={retryFailed}
+              disabled={retrying}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+            >
+              {retrying ? 'Re-queuing…' : `↺ Retry ${failed} Failed`}
+            </button>
           )}
           <span className="text-xs text-muted bg-gray-100 px-2 py-0.5 rounded">Live · 4s</span>
         </div>
