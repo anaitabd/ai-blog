@@ -126,10 +126,23 @@ export class AiBlogStack extends cdk.Stack {
       functionName: 'ai-blog-topic-seeder',
       entry: path.join(lambdaDir, 'topic-seeder', 'index.ts'),
       runtime: lambda.Runtime.NODEJS_20_X,
-      timeout: cdk.Duration.minutes(2),
+      // Needs time for parallel RSS + Reddit + Trends fetches + Bedrock call
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
       environment: sharedEnv,
     })
-    topicsTable.grantWriteData(seederFn)
+    // Needs read access for duplicate keyword checks + write to insert new topics
+    topicsTable.grantReadWriteData(seederFn)
+    // Needs Bedrock to call Claude Haiku for topic ideation
+    seederFn.addToRolePolicy(bedrockPolicy)
+
+    // Run every Monday at 7am UTC — fills the queue with a fresh batch of
+    // trend-grounded topics at the start of each week
+    new events.Rule(this, 'SeederSchedule', {
+      ruleName: 'ai-blog-seeder-schedule',
+      schedule: events.Schedule.cron({ minute: '0', hour: '7', weekDay: 'MON' }),
+      targets: [new targets.LambdaFunction(seederFn)],
+    })
 
     // ─── Lambda: Content Generator ──────────────────────────
     const generatorFn = new NodejsFunction(this, 'ContentGenerator', {
