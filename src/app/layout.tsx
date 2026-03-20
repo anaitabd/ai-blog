@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Script from 'next/script'
+import { GoogleAnalytics } from '@next/third-parties/google'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import './globals.css'
@@ -63,25 +64,13 @@ export default function RootLayout({
             strategy="afterInteractive"
           />
         )}
-        {process.env.NEXT_PUBLIC_GA4_ID && (
-          <>
-            <Script
-              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA4_ID}`}
-              strategy="afterInteractive"
-            />
-            <Script id="ga4" strategy="afterInteractive">{`
-              window.dataLayer = window.dataLayer || [];
-              function gtag(){dataLayer.push(arguments);}
-              gtag('js', new Date());
-              gtag('config', '${process.env.NEXT_PUBLIC_GA4_ID}');
-            `}</Script>
-          </>
-        )}
+
       </head>
       <body className="antialiased">
         <Header />
         {children}
         <Footer />
+        <GoogleAnalytics gaId="G-PDQELT04X9" />
       </body>
     </html>
   )

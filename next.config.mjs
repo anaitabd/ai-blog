@@ -56,6 +56,8 @@ const nextConfig = {
     ANTHROPIC_API_KEY:     process.env.ANTHROPIC_API_KEY,
     // Email
     RESEND_API_KEY:        process.env.RESEND_API_KEY,
+    NEXT_PUBLIC_GA4_ID:    'G-PDQELT04X9',
+    NEXT_PUBLIC_SITE_URL:  'https://www.wealthbeginners.com',
   },
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],

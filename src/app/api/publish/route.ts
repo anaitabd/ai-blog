@@ -221,6 +221,24 @@ export async function POST(req: NextRequest) {
     revalidatePath('/admin')
     revalidatePath('/admin/posts')
 
+    // ── Step 7: Search console sitemap pings (fire-and-forget) ─────────────
+    const siteUrl = (process.env.NEXTJS_SITE_URL ?? '').replace(/\/$/, '')
+    if (siteUrl) {
+      try {
+        const sitemapUrl = encodeURIComponent(`${siteUrl}/sitemap.xml`)
+        const [googleRes, bingRes] = await Promise.all([
+          fetch(`https://www.google.com/ping?sitemap=${sitemapUrl}`),
+          fetch(`https://www.bing.com/ping?sitemap=${sitemapUrl}`),
+        ])
+        console.log('[search-console] Sitemap pings:', {
+          google: googleRes.status,
+          bing:   bingRes.status,
+        })
+      } catch (pingErr) {
+        console.warn('[search-console] Sitemap ping failed (non-blocking):', pingErr)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       postId: post.id,

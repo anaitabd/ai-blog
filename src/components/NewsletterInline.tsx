@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { trackNewsletterSignup } from '@/lib/analytics'
 
 interface Props {
   subscriberCount?: string | null  // e.g. "2.4K+" or "127+" — null → hide count
@@ -22,6 +23,7 @@ export default function NewsletterInline({ subscriberCount }: Props) {
       })
       if (!res.ok) throw new Error()
       setStatus('success')
+      trackNewsletterSignup('inline')
     } catch {
       setStatus('error')
     }

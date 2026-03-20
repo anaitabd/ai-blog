@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     try {
       await sendEmail({
         to:      adminEmail,
-        from:    `WealthBeginners Contact <${FROM_EMAIL}>`,
+        from:    `No Reply · WealthBeginners <${FROM_EMAIL}>`,
         subject: `New Contact: ${subject}`,
         html:    contactAdminEmailHtml({ name, email, subject, message }),
       })
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     try {
       await sendEmail({
         to:      email,
-        from:    `Wealth Beginners <${FROM_EMAIL}>`,
+        from:    `No Reply · WealthBeginners <${FROM_EMAIL}>`,
         subject: `We received your message — ${subject}`,
         html:    contactAutoReplyHtml(name),
       })

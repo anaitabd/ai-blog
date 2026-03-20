@@ -1,37 +1,84 @@
 import { MetadataRoute } from 'next'
 import { prisma } from '@/lib/prisma'
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = process.env.NEXT_PUBLIC_SITE_URL!
+const BASE_URL = 'https://www.wealthbeginners.com'
 
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+
+  // Fetch all published posts
   const posts = await prisma.post.findMany({
     where: { status: 'PUBLISHED' },
     select: { slug: true, updatedAt: true, publishedAt: true },
+    orderBy: { publishedAt: 'desc' },
   })
 
+  // Fetch all categories that have at least 1 published post
   const categories = await prisma.category.findMany({
+    where: { posts: { some: { status: 'PUBLISHED' } } },
     select: { slug: true, createdAt: true },
   })
 
-  return [
-    { url: base, priority: 1.0, changeFrequency: 'daily' as const },
-    { url: `${base}/blog`,          priority: 0.9, changeFrequency: 'daily' as const },
-    { url: `${base}/tools`,         priority: 0.8, changeFrequency: 'monthly' as const },
-    { url: `${base}/about`,         priority: 0.7, changeFrequency: 'monthly' as const },
-    { url: `${base}/contact`,       priority: 0.5, changeFrequency: 'monthly' as const },
-    { url: `${base}/privacy-policy`, priority: 0.3, changeFrequency: 'monthly' as const },
-    { url: `${base}/disclaimer`,    priority: 0.3, changeFrequency: 'monthly' as const },
-    ...categories.map((cat) => ({
-      url: `${base}/category/${cat.slug}`,
-      lastModified: cat.createdAt,
-      priority: 0.7,
-      changeFrequency: 'weekly' as const,
-    })),
-    ...posts.map((post) => ({
-      url: `${base}/${post.slug}`,
-      lastModified: post.updatedAt,
+  // Static pages
+  const staticPages: MetadataRoute.Sitemap = [
+    {
+      url: BASE_URL,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${BASE_URL}/blog`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/tools`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
       priority: 0.8,
-      changeFrequency: 'weekly' as const,
-    })),
+    },
+    {
+      url: `${BASE_URL}/about`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.5,
+    },
+    {
+      url: `${BASE_URL}/contact`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.4,
+    },
+    {
+      url: `${BASE_URL}/privacy-policy`,
+      lastModified: new Date(),
+      changeFrequency: 'yearly',
+      priority: 0.2,
+    },
+    {
+      url: `${BASE_URL}/disclaimer`,
+      lastModified: new Date(),
+      changeFrequency: 'yearly',
+      priority: 0.2,
+    },
   ]
+
+  // Article pages
+  const articlePages: MetadataRoute.Sitemap = posts.map((post) => ({
+    url: `${BASE_URL}/${post.slug}`,
+    lastModified: post.updatedAt || post.publishedAt || new Date(),
+    changeFrequency: 'weekly' as const,
+    priority: 0.8,
+  }))
+
+  // Category pages
+  const categoryPages: MetadataRoute.Sitemap = categories.map((cat) => ({
+    url: `${BASE_URL}/category/${cat.slug}`,
+    lastModified: cat.createdAt || new Date(),
+    changeFrequency: 'weekly' as const,
+    priority: 0.6,
+  }))
+
+  return [...staticPages, ...categoryPages, ...articlePages]
 }

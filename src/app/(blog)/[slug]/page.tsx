@@ -13,6 +13,7 @@ import AffiliateBox from '@/components/AffiliateBox'
 import AuthorBio from '@/components/AuthorBio'
 import RelatedPosts from '@/components/RelatedPosts'
 import { sanitizePostContent } from '@/lib/content-sanitizer'
+import ArticleTracker from '@/components/ArticleTracker'
 
 interface Props {
   params: { slug: string }
@@ -97,6 +98,7 @@ export default async function ArticlePage({ params }: Props) {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
+      <ArticleTracker slug={post.slug} title={post.title} category={post.category.name} />
       {/* JSON-LD: Article schema */}
       {articleSchema && (
         <script

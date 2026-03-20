@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
+import { BedrockRuntimeClient, InvokeModelCommand, ConverseCommand } from '@aws-sdk/client-bedrock-runtime'
 import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb'
 import { log, updateTopicStep } from '../shared/logger'
 
@@ -495,6 +495,12 @@ Include at least 3 real statistics from credible sources:
 - Pew Research Center
 Format: "According to [Source], [specific stat with number and year]."
 
+WEB SEARCH DATA REQUIREMENTS (non-negotiable):
+- Use ONLY real current data from your web search results
+- Include at least 3 specific statistics with their sources
+- Reference at least 1 recent news event related to this topic
+- Recommend specific real products/services with current pricing
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FEATURED IMAGE PROMPT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -544,7 +550,12 @@ Respond ONLY with this JSON:
   "metaDesc": "145–158 char description with keyword and hook — no generic phrasing",
   "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
   "schemaJson": "{\\"@context\\":\\"https://schema.org\\",\\"@type\\":\\"Article\\",\\"headline\\":\\"...\\",\\"description\\":\\"...\\",\\"datePublished\\":\\"${new Date().toISOString()}\\",\\"dateModified\\":\\"${new Date().toISOString()}\\",\\"author\\":{\\"@type\\":\\"Organization\\",\\"name\\":\\"WealthBeginners Editorial Team\\",\\"url\\":\\"https://wealthbeginners.com/about\\"},\\"publisher\\":{\\"@type\\":\\"Organization\\",\\"name\\":\\"WealthBeginners.com\\",\\"url\\":\\"https://wealthbeginners.com\\"}}",
-  "imagePrompt": "Flat design illustration [specific visual description related to topic], navy blue background #0B1628, gold (#C9A84C) accents, clean financial editorial magazine style, no text, no faces, no logos, 16:9 landscape format, professional quality"
+  "imagePrompt": "Flat design illustration [specific visual description related to topic], navy blue background #0B1628, gold (#C9A84C) accents, clean financial editorial magazine style, no text, no faces, no logos, 16:9 landscape format, professional quality",
+  "internalLinks": [
+    { "anchor": "suggested anchor text for internal link 1", "topicSlug": "suggested-topic-slug-1" },
+    { "anchor": "suggested anchor text for internal link 2", "topicSlug": "suggested-topic-slug-2" },
+    { "anchor": "suggested anchor text for internal link 3", "topicSlug": "suggested-topic-slug-3" }
+  ]
 }
 \`\`\``
 }
@@ -563,27 +574,114 @@ async function callBedrock(
     qualityIssues?: string[]
     qualityWarnings?: string[]
   },
-) {
+): Promise<Record<string, unknown>> {
   const prompt = buildPrompt(keyword, category, isRetry, relatedArticle, leadMagnet, trendCtx)
+  const year        = new Date().getFullYear()
+  const modelId     = process.env.BEDROCK_MODEL_ID ?? 'anthropic.claude-opus-4-5'
+  const temperature = isRetry ? 0.2 : 0.4
 
-  const command = new InvokeModelCommand({
-    modelId: process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    contentType: 'application/json',
-    accept: 'application/json',
-    body: JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 10000,
-      // Lower temperature = more rule-following. Retries near-deterministic
-      // so the model doesn't repeat the same structural mistakes.
-      // NOTE: Claude Sonnet 4.5 does not allow temperature + top_p together.
-      temperature: isRetry ? 0.2 : 0.4,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
+  const systemPrompt =
+    `You are an elite personal finance copywriter writing for "WealthBeginners.com." Your tone is empathetic, fiercely honest, highly actionable, and conversational — like a smart friend giving advice over coffee.\n\n` +
+    `You have access to live web search. Before writing, search for:\n` +
+    `(1) current statistics and rates for this topic,\n` +
+    `(2) recent news from the last 30 days,\n` +
+    `(3) current best products/services to recommend.\n` +
+    `Always cite real, current data in the article. Never use placeholder statistics. ` +
+    `If you reference a rate or statistic, it must come from your search results.`
 
-  const response = await bedrock.send(command)
-  const body     = JSON.parse(new TextDecoder().decode(response.body))
-  const text: string = body.content[0].text
+  // Web search tool definition (web_search_20250305 built-in capability)
+  const webSearchTool = {
+    toolSpec: {
+      name: 'web_search',
+      description:
+        `Search the internet for current financial information. ` +
+        `Perform these three searches before writing the article: ` +
+        `"${keyword} current rates ${year}", ` +
+        `"${keyword} latest news", ` +
+        `"best ${keyword} tips ${year}". ` +
+        `Use ONLY real current data from your search results. ` +
+        `Include at least 3 specific statistics with sources. ` +
+        `Reference at least 1 recent news event. ` +
+        `Recommend specific real products/services with current pricing.`,
+      inputSchema: {
+        json: {
+          type: 'object' as const,
+          properties: {
+            query: { type: 'string', description: 'The exact search query to execute' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+  }
+
+  type MsgRole = 'user' | 'assistant'
+  type ContentBlock =
+    | { text: string }
+    | { toolUse: { toolUseId: string; name: string; input: Record<string, unknown> } }
+    | { toolResult: { toolUseId: string; content: Array<{ text: string }>; status?: 'success' | 'error' } }
+
+  let messages: Array<{ role: MsgRole; content: ContentBlock[] }> = [
+    { role: 'user', content: [{ text: prompt }] },
+  ]
+
+  const makeConverseCmd = (msgs: typeof messages) =>
+    new ConverseCommand({
+      modelId,
+      system: [{ text: systemPrompt }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: msgs as any,
+      toolConfig: { tools: [webSearchTool] },
+      inferenceConfig: { maxTokens: 10000, temperature },
+    })
+
+  let response = await bedrock.send(makeConverseCmd(messages))
+
+  // Handle tool-use loop — Claude may call web_search multiple times before writing
+  let iterations = 0
+  while (response.stopReason === 'tool_use' && iterations < 6) {
+    iterations++
+    const assistantContent = (response.output?.message?.content ?? []) as ContentBlock[]
+    messages = [...messages, { role: 'assistant', content: assistantContent }]
+
+    const toolResults: ContentBlock[] = []
+    for (const block of assistantContent) {
+      if (!('toolUse' in block) || !block.toolUse) continue
+      const query = String((block.toolUse.input as Record<string, unknown>).query ?? keyword)
+
+      let resultText: string
+      try {
+        const ctx = await fetchLiveContext(query)
+        const parts: string[] = []
+        if (ctx.headlines.length > 0)
+          parts.push(`Recent news headlines:\n${ctx.headlines.map(h => `- ${h}`).join('\n')}`)
+        if (ctx.redditPosts.length > 0)
+          parts.push(`Community questions/discussions:\n${ctx.redditPosts.map(r => `- ${r}`).join('\n')}`)
+        resultText =
+          parts.join('\n\n') ||
+          `Search for "${query}" returned no specific results. Use your knowledge for current rates and data.`
+      } catch (searchErr) {
+        console.warn(`[web-search] Query failed for "${query}":`, searchErr)
+        resultText = `Search for "${query}" encountered an error. Use your general knowledge for this topic.`
+      }
+
+      toolResults.push({
+        toolResult: {
+          toolUseId: block.toolUse.toolUseId,
+          content: [{ text: resultText }],
+          status: 'success',
+        },
+      })
+    }
+
+    messages = [...messages, { role: 'user', content: toolResults }]
+    response = await bedrock.send(makeConverseCmd(messages))
+  }
+
+  const text = (response.output?.message?.content as ContentBlock[] | undefined)
+    ?.find((b): b is { text: string } => 'text' in b && typeof b.text === 'string')
+    ?.text
+  if (!text) throw new Error('No text content in Bedrock ConverseCommand response')
   return parseBedrockJson(text)
 }
 

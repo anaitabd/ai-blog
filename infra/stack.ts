@@ -204,7 +204,7 @@ export class AiBlogStack extends cdk.Stack {
     const ytGeneratorDlq  = new sqs.Queue(this, 'YoutubeGeneratorDLQ',  { queueName: 'ai-blog-yt-generator-dlq'  })
     const ytPublisherDlq  = new sqs.Queue(this, 'YoutubePublisherDLQ',  { queueName: 'ai-blog-yt-publisher-dlq'  })
     const emailNotifierDlq = new sqs.Queue(this, 'EmailNotifierDLQ',    { queueName: 'ai-blog-email-notifier-dlq' })
-
+    const pinterestDlq    = new sqs.Queue(this, 'PinterestPublisherDLQ', { queueName: 'ai-blog-pinterest-dlq' })
     // ─── FFmpeg Lambda Layer ─────────────────────────────────
     // Static amd64 binary from johnvansickle.com — run scripts/download-ffmpeg-layer.sh
     // before deploying to populate lambda/layers/ffmpeg/bin/ffmpeg
@@ -306,7 +306,40 @@ export class AiBlogStack extends cdk.Stack {
     // ─── SSM: SES from-email ─────────────────────────────────
     // NOTE: /wealthbeginners/ses/from-email is managed by scripts/deploy.sh
     // (aws ssm put-parameter). CDK does not own it — avoids conflicts on re-deploy.
+    // ─── Lambda: Pinterest Publisher ──────────────────────────────────────
+    const pinterestPublisherFn = new NodejsFunction(this, 'PinterestPublisher', {
+      functionName: 'ai-blog-pinterest-publisher',
+      entry: path.join(lambdaDir, 'pinterest-publisher', 'index.ts'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      deadLetterQueue: pinterestDlq,
+      environment: {
+        ...sharedEnv,
+        NEXTJS_SITE_URL: process.env.NEXTJS_SITE_URL ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
+      },
+    })
 
+    // S3 read/write for Pinterest image generation + upload
+    imagesBucket.grantReadWrite(pinterestPublisherFn)
+
+    // Bedrock for Nova Canvas image generation
+    pinterestPublisherFn.addToRolePolicy(bedrockPolicy)
+
+    // SSM read for Pinterest credentials (board IDs, access token)
+    pinterestPublisherFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/pinterest/*`,
+      ],
+    }))
+    // Also need webhook secret to update post record
+    pinterestPublisherFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/wealthbeginners/webhook-secret`,
+      ],
+    }))
     // ─── Step Functions — post-publish parallel branch ───────
     const youtubeGenerateStep = new tasks.LambdaInvoke(this, 'GenerateYoutubeShorts', {
       lambdaFunction: youtubeGeneratorFn,
@@ -322,7 +355,37 @@ export class AiBlogStack extends cdk.Stack {
       lambdaFunction: emailNotifierFn,
       outputPath: '$.Payload',
     })
+    // ─── Pinterest Step Functions states ─────────────────────────────────
+    const pinterestGenerateStep = new tasks.LambdaInvoke(this, 'GeneratePinterestImage', {
+      lambdaFunction: pinterestPublisherFn,
+      payload: sfn.TaskInput.fromObject({
+        action: 'generate_image',
+        'postId.$': '$.postId',
+        'title.$': '$.title',
+        'slug.$': '$.slug',
+        'category.$': '$.postCategory',
+      }),
+      outputPath: '$.Payload',
+    })
 
+    const pinterestPublishStep = new tasks.LambdaInvoke(this, 'PublishToPinterest', {
+      lambdaFunction: pinterestPublisherFn,
+      payload: sfn.TaskInput.fromObject({
+        action: 'publish_pin',
+        'postId.$': '$.postId',
+        'imageUrl.$': '$.pinterestImageUrl',
+        'title.$': '$.title',
+        'slug.$': '$.slug',
+      }),
+      outputPath: '$.Payload',
+    })
+
+    const pinterestFailed = new sfn.Pass(this, 'PinterestFailed', {
+      result: sfn.Result.fromObject({ status: 'pinterest_failed' }),
+    })
+    pinterestGenerateStep.addCatch(pinterestFailed, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+    pinterestPublishStep.addCatch(pinterestFailed, { errors: ['States.ALL'], resultPath: '$.pinterestError' })
+    const pinterestFlow = pinterestGenerateStep.next(pinterestPublishStep)
     // Error handling for new steps (non-blocking — pipeline already succeeded)
     youtubeGenerateStep.addCatch(new sfn.Pass(this, 'YoutubeGeneratorFailed'), {
       errors: ['States.ALL'], resultPath: '$.youtubeError',
@@ -342,6 +405,7 @@ export class AiBlogStack extends cdk.Stack {
     const postPublishParallel = new sfn.Parallel(this, 'PostPublishParallel')
       .branch(youtubeFlow)
       .branch(emailFlow)
+      .branch(pinterestFlow)
 
     postPublishParallel.next(successState)
     postPublishParallel.addCatch(failState, { errors: ['States.ALL'], resultPath: '$.parallelError' })

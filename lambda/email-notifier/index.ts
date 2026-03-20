@@ -168,9 +168,9 @@ async function sendPostNotification(opts: {
   // Use no-reply@ on the verified domain so recipients can't reply
   const domain      = fromEmail.includes('@') ? fromEmail.split('@')[1] : 'wealthbeginners.com'
   const noreply     = `noreply@${domain}`
-  const displayName = 'WealthBeginners'
+  const displayName = 'No Reply · WealthBeginners'
 
-  const greeting   = name && name.trim() ? `Hi ${name.split(' ')[0]},` : 'Hi there,'
+  const firstName  = name && name.trim() ? name.split(' ')[0] : ''
   const readLabel  = postReadingTime > 0 ? `${postReadingTime} min read` : '7 min read'
   const catLabel   = postCategory   || 'Personal Finance'
   const year       = new Date().getFullYear()
@@ -183,133 +183,212 @@ async function sendPostNotification(opts: {
   <meta name="color-scheme" content="light">
   <title>${postTitle}</title>
 </head>
-<body style="margin:0;padding:0;background:#EDEBE6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background:#F0EDE8;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
 
-  <!-- PREVIEW TEXT -->
-  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#EDEBE6;">
-    ${postExcerpt.slice(0, 130)}&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;
+  <!-- ░░░ PREVIEW TEXT ░░░ -->
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#F0EDE8;">
+    ${postExcerpt.slice(0, 130)}&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;
   </div>
 
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#EDEBE6;padding:40px 16px;">
-    <tr><td align="center">
-    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F0EDE8;padding:32px 16px 48px;">
+  <tr><td align="center">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
-      <!-- ── HEADER ─────────────────────────────────────────── -->
-      <tr>
-        <td style="background:#0B1628;border-radius:14px 14px 0 0;padding:26px 40px 22px;text-align:center;">
-          <p style="margin:0 0 4px;color:#C9A84C;font-size:13px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">WEALTHBEGINNERS</p>
-          <p style="margin:0;color:rgba(255,255,255,0.38);font-size:11px;letter-spacing:0.06em;">Smart money · simplified</p>
-        </td>
-      </tr>
-      <!-- gold accent line -->
-      <tr><td style="background:linear-gradient(90deg,#C9A84C 0%,#E8C96B 50%,#C9A84C 100%);height:3px;"></td></tr>
+    <!-- ══════════════════════════════════════════════
+         TOP LABEL
+    ══════════════════════════════════════════════════ -->
+    <tr>
+      <td align="center" style="padding-bottom:18px;">
+        <p style="margin:0;color:#8A7E6E;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;">
+          WealthBeginners &nbsp;·&nbsp; New Article
+        </p>
+      </td>
+    </tr>
 
-      <!-- ── BODY ────────────────────────────────────────────── -->
-      <tr>
-        <td style="background:#FFFFFF;padding:40px 40px 32px;">
+    <!-- ══════════════════════════════════════════════
+         HEADER  (dark card)
+    ══════════════════════════════════════════════════ -->
+    <tr>
+      <td style="background:#0B1628;border-radius:20px 20px 0 0;padding:36px 44px 0;text-align:center;">
 
-          <!-- "New Article" badge -->
-          <table cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+        <!-- Wordmark -->
+        <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin-bottom:28px;">
+          <tr>
+            <td style="border:2px solid rgba(201,168,76,0.35);border-radius:10px;padding:10px 22px;">
+              <span style="color:#C9A84C;font-size:15px;font-weight:800;letter-spacing:0.22em;text-transform:uppercase;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">WEALTHBEGINNERS</span>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Hero title area -->
+        <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(201,168,76,0.2);border-radius:14px 14px 0 0;padding:32px 32px 36px;margin:0 -4px;">
+          <!-- Category + read-time pills -->
+          <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin-bottom:20px;">
             <tr>
-              <td style="background:#FEF9EC;border:1px solid #F0D97A;border-radius:20px;padding:5px 14px;">
-                <span style="color:#92712A;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;">✦ New Article</span>
+              <td style="background:#C9A84C;border-radius:20px;padding:4px 14px;">
+                <span style="color:#0B1628;font-size:10px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;">${catLabel}</span>
+              </td>
+              <td width="10"></td>
+              <td style="background:rgba(255,255,255,0.1);border-radius:20px;padding:4px 14px;">
+                <span style="color:rgba(255,255,255,0.7);font-size:10px;font-weight:600;letter-spacing:0.08em;">⏱&nbsp;${readLabel}</span>
               </td>
             </tr>
           </table>
 
-          <!-- Greeting -->
-          <p style="color:#374151;font-size:15px;margin:0 0 6px;font-weight:600;">${greeting}</p>
-          <p style="color:#6B7280;font-size:14px;line-height:1.65;margin:0 0 28px;">We just published a new guide. Here's everything you need to know:</p>
+          <!-- Post title -->
+          <h1 style="color:#FFFFFF;font-size:26px;font-weight:700;line-height:1.3;margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;text-align:center;">${postTitle}</h1>
 
-          <!-- ── Article Card ───────────────────────────────────── -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F7F4;border:1px solid #E5E2DC;border-left:4px solid #C9A84C;border-radius:0 10px 10px 0;margin-bottom:28px;">
-            <tr>
-              <td style="padding:24px 26px 20px;">
-                <!-- Category + read time pill row -->
-                <table cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
-                  <tr>
-                    <td style="background:#0B1628;border-radius:4px;padding:3px 10px;margin-right:8px;">
-                      <span style="color:#C9A84C;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;">${catLabel}</span>
-                    </td>
-                    <td width="10"></td>
-                    <td style="background:#F0EDE8;border-radius:4px;padding:3px 10px;">
-                      <span style="color:#6B7280;font-size:10px;font-weight:600;letter-spacing:0.06em;">⏱ ${readLabel}</span>
-                    </td>
-                  </tr>
-                </table>
-                <!-- Title -->
-                <h1 style="color:#0B1628;font-size:21px;font-weight:700;line-height:1.3;margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;">${postTitle}</h1>
-                <!-- Excerpt -->
-                <p style="color:#6B7280;font-size:14px;line-height:1.7;margin:0;">${postExcerpt}</p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:4px 26px 24px;">
-                <table cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="background:#0B1628;border-radius:8px;">
-                      <a href="${postUrl}" style="display:block;color:#C9A84C;font-size:13px;font-weight:700;text-decoration:none;padding:11px 24px;letter-spacing:0.03em;">Read the Full Guide →</a>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
+          <!-- Excerpt -->
+          <p style="color:rgba(255,255,255,0.65);font-size:14px;line-height:1.75;margin:0;text-align:center;">${postExcerpt}</p>
+        </div>
 
-          <!-- ── "What you'll learn" callout ───────────────────── -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFBF0;border:1px solid #F3E8C0;border-radius:10px;margin-bottom:28px;">
-            <tr>
-              <td style="padding:18px 22px;">
-                <p style="color:#92712A;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 6px;">In this guide</p>
-                <p style="color:#5C4A1E;font-size:13px;line-height:1.65;margin:0;">Practical, step-by-step strategies with real numbers you can act on today — written for beginners, no financial jargon.</p>
-              </td>
-            </tr>
-          </table>
+      </td>
+    </tr>
 
-          <p style="color:#D1CFC9;font-size:11px;text-align:center;margin:0;">You received this because you subscribed to WealthBeginners updates.</p>
-        </td>
-      </tr>
+    <!-- Gold divider line -->
+    <tr><td style="background:linear-gradient(90deg,transparent,#C9A84C 20%,#E8C96B 50%,#C9A84C 80%,transparent);height:2px;"></td></tr>
 
-      <!-- ── FOOTER ──────────────────────────────────────────── -->
-      <tr>
-        <td style="background:#0B1628;border-radius:0 0 14px 14px;padding:22px 40px;text-align:center;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td align="center" style="padding-bottom:10px;">
-                <a href="${siteUrl}" style="color:#C9A84C;font-size:11px;font-weight:700;text-decoration:none;letter-spacing:0.1em;text-transform:uppercase;margin:0 12px;">Visit Website</a>
-                <span style="color:rgba(255,255,255,0.2);font-size:11px;">|</span>
-                <a href="${siteUrl}/blog" style="color:rgba(255,255,255,0.45);font-size:11px;text-decoration:none;margin:0 12px;">All Articles</a>
-                <span style="color:rgba(255,255,255,0.2);font-size:11px;">|</span>
-                <a href="${unsubUrl}" style="color:rgba(255,255,255,0.35);font-size:11px;text-decoration:underline;margin:0 12px;">Unsubscribe</a>
-              </td>
-            </tr>
-            <tr>
-              <td align="center">
-                <p style="color:rgba(255,255,255,0.25);font-size:10px;margin:0;letter-spacing:0.04em;">© ${year} WealthBeginners.com · This email was sent from a no-reply address.</p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
+    <!-- ══════════════════════════════════════════════
+         BODY  (white card)
+    ══════════════════════════════════════════════════ -->
+    <tr>
+      <td style="background:#FFFFFF;padding:0 44px 40px;">
 
-    </table>
-    </td></tr>
+        <!-- Personal greeting -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:36px 0 24px;border-bottom:1px solid #F0EDE8;">
+              <p style="margin:0 0 8px;color:#0B1628;font-size:16px;font-weight:700;">
+                ${firstName ? `Hey ${firstName} 👋` : 'Hey there 👋'}
+              </p>
+              <p style="margin:0;color:#6B7280;font-size:14px;line-height:1.7;">
+                We just dropped a brand-new guide for you. Here's a quick look at what's inside — and why it's worth your time today.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ── 3 value-prop icons ──────────────────────────── -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
+          <tr>
+            <td width="33%" style="text-align:center;padding:0 8px;">
+              <div style="background:#F8F6F1;border-radius:12px;padding:18px 10px;">
+                <p style="font-size:24px;margin:0 0 8px;">📖</p>
+                <p style="color:#0B1628;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin:0 0 4px;">In-Depth</p>
+                <p style="color:#9CA3AF;font-size:11px;margin:0;line-height:1.4;">Comprehensive, beginner-friendly</p>
+              </div>
+            </td>
+            <td width="33%" style="text-align:center;padding:0 8px;">
+              <div style="background:#F8F6F1;border-radius:12px;padding:18px 10px;">
+                <p style="font-size:24px;margin:0 0 8px;">💡</p>
+                <p style="color:#0B1628;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin:0 0 4px;">Actionable</p>
+                <p style="color:#9CA3AF;font-size:11px;margin:0;line-height:1.4;">Real steps, real numbers</p>
+              </div>
+            </td>
+            <td width="33%" style="text-align:center;padding:0 8px;">
+              <div style="background:#F8F6F1;border-radius:12px;padding:18px 10px;">
+                <p style="font-size:24px;margin:0 0 8px;">🎯</p>
+                <p style="color:#0B1628;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin:0 0 4px;">No Jargon</p>
+                <p style="color:#9CA3AF;font-size:11px;margin:0;line-height:1.4;">Plain English, always</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ── "In this guide" highlight box ──────────────── -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#FFFBEF 0%,#FEF6DC 100%);border:1px solid #EDD98A;border-left:4px solid #C9A84C;border-radius:0 12px 12px 0;padding:20px 24px;">
+              <p style="color:#92712A;font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;margin:0 0 8px;">✦ &nbsp;In this guide</p>
+              <p style="color:#5C4A1E;font-size:14px;line-height:1.7;margin:0;">
+                Practical, step-by-step strategies with real numbers you can act on today — written for beginners, zero financial jargon required.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ── Primary CTA button ─────────────────────────── -->
+        <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 16px;">
+          <tr>
+            <td style="background:#0B1628;border-radius:12px;box-shadow:0 4px 14px rgba(11,22,40,0.25);">
+              <a href="${postUrl}"
+                 style="display:block;color:#C9A84C;font-size:15px;font-weight:800;text-decoration:none;padding:16px 40px;letter-spacing:0.04em;text-align:center;">
+                Read the Full Guide &nbsp;→
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Secondary link -->
+        <p style="text-align:center;margin:0 0 36px;">
+          <a href="${postUrl}" style="color:#9CA3AF;font-size:12px;text-decoration:underline;">${postUrl.replace('https://', '')}</a>
+        </p>
+
+        <!-- Divider -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+          <tr><td style="border-top:1px solid #F0EDE8;"></td></tr>
+        </table>
+
+        <!-- Subscription note -->
+        <p style="color:#C5C0BA;font-size:11px;text-align:center;margin:0;line-height:1.6;">
+          You're receiving this because you subscribed to WealthBeginners.<br>
+          This message was sent from a no-reply address — please do not reply.
+        </p>
+
+      </td>
+    </tr>
+
+    <!-- ══════════════════════════════════════════════
+         FOOTER  (dark card)
+    ══════════════════════════════════════════════════ -->
+    <tr>
+      <td style="background:#0B1628;border-radius:0 0 20px 20px;padding:28px 44px;text-align:center;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <!-- Nav links -->
+          <tr>
+            <td align="center" style="padding-bottom:14px;">
+              <a href="${siteUrl}" style="color:#C9A84C;font-size:11px;font-weight:700;text-decoration:none;letter-spacing:0.1em;text-transform:uppercase;margin:0 10px;">Website</a>
+              <span style="color:rgba(255,255,255,0.15);font-size:11px;">|</span>
+              <a href="${siteUrl}/blog" style="color:rgba(255,255,255,0.5);font-size:11px;text-decoration:none;margin:0 10px;">All Articles</a>
+              <span style="color:rgba(255,255,255,0.15);font-size:11px;">|</span>
+              <a href="${unsubUrl}" style="color:rgba(255,255,255,0.35);font-size:11px;text-decoration:underline;margin:0 10px;">Unsubscribe</a>
+            </td>
+          </tr>
+          <!-- Legal -->
+          <tr>
+            <td align="center">
+              <p style="color:rgba(255,255,255,0.22);font-size:10px;margin:0;letter-spacing:0.04em;line-height:1.6;">
+                © ${year} WealthBeginners.com &nbsp;·&nbsp; All rights reserved.<br>
+                Sent from a no-reply address — replies will not be received.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+  </table>
+  </td></tr>
   </table>
 </body>
 </html>`
 
   const plainText = [
-    `${postTitle}`,
+    `══════════════════════════════`,
+    `  WEALTHBEGINNERS — New Guide`,
+    `══════════════════════════════`,
     ``,
+    postTitle,
     `${catLabel} · ${readLabel}`,
     ``,
     postExcerpt,
     ``,
-    `Read the full guide: ${postUrl}`,
+    `▶  Read the full guide:`,
+    `   ${postUrl}`,
     ``,
-    `─────────────────────────────`,
+    `──────────────────────────────`,
     `WealthBeginners.com`,
-    `This email was sent from a no-reply address.`,
+    `This is a no-reply address — please do not reply to this email.`,
     `Unsubscribe: ${unsubUrl}`,
   ].join('\n')
 
@@ -318,7 +397,7 @@ async function sendPostNotification(opts: {
     ReplyToAddresses: [noreply],
     Destination: { ToAddresses: [to] },
     Message: {
-      Subject: { Data: `New on WealthBeginners: ${postTitle}`, Charset: 'UTF-8' },
+      Subject: { Data: `✦ New Guide: ${postTitle}`, Charset: 'UTF-8' },
       Body: {
         Html: { Data: html,      Charset: 'UTF-8' },
         Text: { Data: plainText, Charset: 'UTF-8' },

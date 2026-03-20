@@ -37,11 +37,12 @@ export async function POST(req: NextRequest) {
     })
 
     // Send welcome email — Resend (primary) → SES (fallback)
+    const firstName = name && name.trim() ? name.split(' ')[0] : ''
     try {
       await sendEmail({
         to:      email,
-        subject: 'Welcome to WealthBeginners 🎉',
-        html:    welcomeEmailHtml(email),
+        subject: `✦ Welcome to WealthBeginners${firstName ? `, ${firstName}` : ''}!`,
+        html:    welcomeEmailHtml(email, name),
       })
       console.log(`[newsletter] Welcome email sent to ${email}`)
     } catch (emailErr) {

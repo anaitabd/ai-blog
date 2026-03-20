@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { trackCalculator } from '@/lib/analytics'
 
 function formatCurrency(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
@@ -73,6 +74,13 @@ export default function CompoundCalculator() {
           +{formatCurrency(gain)} gain · {rate}% for {years} years
         </p>
       </div>
+
+      <button
+        onClick={() => trackCalculator(Math.round(result))}
+        className="mt-4 w-full bg-gold/20 hover:bg-gold/30 text-gold text-sm font-semibold py-2.5 rounded-xl transition-colors"
+      >
+        Calculate →
+      </button>
     </aside>
   )
 }

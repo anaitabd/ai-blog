@@ -1,29 +1,20 @@
-import Link from 'next/link'
-import LogoutButton from './LogoutButton'
+import { prisma } from '@/lib/prisma'
+import SidebarNav from './SidebarNav'
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  let pendingCount = 0
+  try {
+    pendingCount = await prisma.post.count({ where: { status: 'REVIEW' } })
+  } catch { /* DB unavailable — show 0 */ }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Link href="/admin" className="font-semibold text-lg">
-            Blog Admin
-          </Link>
-          <Link href="/admin/posts" className="text-sm text-gray-600 hover:text-gray-900">
-            Posts
-          </Link>
-          <Link href="/admin/topics" className="text-sm text-gray-600 hover:text-gray-900">
-            Topics
-          </Link>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-sm text-gray-500 hover:text-gray-800">
-            View site →
-          </Link>
-          <LogoutButton />
-        </div>
-      </nav>
-      <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+    <div className="flex min-h-screen bg-[#F0EDE8]">
+      <SidebarNav pendingCount={pendingCount} />
+      {/* Content offset by sidebar on desktop, full-width on mobile */}
+      <div className="flex-1 min-w-0 lg:pl-64">
+        <main className="min-h-screen pt-14 lg:pt-0">{children}</main>
+      </div>
     </div>
   )
 }
+
