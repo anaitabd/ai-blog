@@ -25,12 +25,16 @@ export const handler = async () => {
     return { status: 'empty' }
   }
 
-  const topic       = result.Items[0]
-  const topicId     = topic.id.S!
-  const keyword     = topic.keyword.S!
-  const category    = topic.category.S!
+  const topic          = result.Items[0]
+  const topicId        = topic.id.S!
+  const keyword        = topic.keyword.S!
+  const category       = topic.category.S!
   const relatedArticle = topic.relatedArticle?.S
   const leadMagnet     = topic.leadMagnet?.S
+  const trendScore     = topic.trendScore?.N ? parseInt(topic.trendScore.N, 10) : undefined
+  const originalQuery  = topic.originalQuery?.S
+  // relatedTrends is stored as a DynamoDB String Set (SS)
+  const relatedTrends: string[] = topic.relatedTrends?.SS ?? []
 
   await dynamo.send(
     new UpdateItemCommand({
@@ -52,12 +56,21 @@ export const handler = async () => {
     new StartExecutionCommand({
       stateMachineArn: process.env.STATE_MACHINE_ARN!,
       name: executionName,
-      input: JSON.stringify({ topicId, keyword, category, relatedArticle, leadMagnet }),
+      input: JSON.stringify({
+        topicId,
+        keyword,
+        category,
+        relatedArticle,
+        leadMagnet,
+        trendScore,
+        originalQuery,
+        relatedTrends,
+      }),
     })
   )
 
   log({ lambda: 'topic-picker', step: 'pipeline-started', status: 'complete', pct: 100,
-    meta: { topicId, keyword, category, executionName } })
+    meta: { topicId, keyword, category, trendScore, relatedTrends: relatedTrends.length, executionName } })
 
   return { status: 'started', topicId, keyword }
 }

@@ -118,10 +118,15 @@ async function isDuplicate(keyword: string): Promise<boolean> {
   return (result.Count ?? 0) > 0
 }
 
-async function saveTopic(keyword: string, originalQuery: string, trendScore: number) {
+async function saveTopic(keyword: string, originalQuery: string, trendScore: number, risingKeywords: string[] = []) {
   const id       = `trend-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   const enriched = enrichKeyword(keyword)
   const priority = trendScoreToPriority(trendScore)
+
+  // Keep only unique, clean related keywords (exclude the keyword itself)
+  const relatedTrends = [...new Set(
+    risingKeywords.map(k => k.trim().toLowerCase()).filter(k => k && k !== enriched.toLowerCase())
+  )].slice(0, 8)
 
   await dynamo.send(
     new PutItemCommand({
@@ -137,6 +142,9 @@ async function saveTopic(keyword: string, originalQuery: string, trendScore: num
         estimatedCPC:    { S: estimateCPC(enriched) },
         monthlySearches: { S: trendScoreToSearchBand(trendScore) },
         createdAt:       { S: new Date().toISOString() },
+        ...(relatedTrends.length > 0 && {
+          relatedTrends: { SS: relatedTrends },
+        }),
       },
       ConditionExpression: 'attribute_not_exists(id)',
     })
@@ -150,6 +158,7 @@ async function processTrendItem(
   saved: string[],
   skipped: string[],
   fetchScore: boolean,
+  risingKeywords: string[],
 ): Promise<void> {
   if (!kw || isProhibited(kw)) { skipped.push(kw); return }
   if (await isDuplicate(kw))   { skipped.push(kw); return }
@@ -157,7 +166,7 @@ async function processTrendItem(
   const trendScore = fetchScore ? await fetchTrendScore(kw) : 50
 
   try {
-    const result = await saveTopic(kw, query, trendScore)
+    const result = await saveTopic(kw, query, trendScore, risingKeywords)
     saved.push(result.keyword)
     log({ lambda: 'trend-fetcher', step: 'save-topic', status: 'complete',
       meta: { keyword: result.keyword, trendScore, priority: result.priority } })
@@ -188,13 +197,16 @@ export const handler = async () => {
       const risingItems: Array<{ query: string }> =
         parsed?.default?.rankedList?.[0]?.rankedKeyword ?? []
 
+      // Collect all rising query strings for context storage
+      const allRisingKeywords = risingItems.map(item => item.query?.trim()).filter(Boolean)
+
       // Only fetch Interest Over Time for the top 3 to avoid rate limiting
       for (let j = 0; j < Math.min(3, risingItems.length); j++) {
-        await processTrendItem(risingItems[j].query?.trim(), query, saved, skipped, true)
+        await processTrendItem(risingItems[j].query?.trim(), query, saved, skipped, true, allRisingKeywords)
       }
       // Process remaining items without an extra API call
       for (let j = 3; j < Math.min(5, risingItems.length); j++) {
-        await processTrendItem(risingItems[j].query?.trim(), query, saved, skipped, false)
+        await processTrendItem(risingItems[j].query?.trim(), query, saved, skipped, false, allRisingKeywords)
       }
 
       log({ lambda: 'trend-fetcher', step: 'fetch-query', status: 'complete', pct,

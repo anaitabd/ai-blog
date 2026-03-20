@@ -12,22 +12,107 @@ interface Event {
   retryCount?: number
   relatedArticle?: string
   leadMagnet?: string
+  trendScore?: number
+  relatedTrends?: string[]
+  originalQuery?: string
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Live context scraper — Google News RSS + Reddit (no API keys needed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface LiveContext {
+  headlines: string[]
+  redditPosts: string[]
+}
+
+async function fetchLiveContext(keyword: string): Promise<LiveContext> {
+  const headlines: string[]   = []
+  const redditPosts: string[] = []
+
+  // ── Google News RSS ───────────────────────────────────────────────────────
+  try {
+    const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(keyword + ' personal finance')}&hl=en-US&gl=US&ceid=US:en`
+    const res = await fetch(newsUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WealthBeginners/1.0; +https://wealthbeginners.com)' },
+      signal: AbortSignal.timeout(6000),
+    })
+    const xml = await res.text()
+
+    // Try CDATA-wrapped titles first (most Google News feeds)
+    const cdataRe = /<item>[\s\S]*?<title><!\[CDATA\[(.*?)\]\]><\/title>/g
+    for (const m of xml.matchAll(cdataRe)) {
+      if (headlines.length >= 5) break
+      const title = m[1].trim()
+      if (title && !title.toLowerCase().startsWith('google news')) headlines.push(title)
+    }
+
+    // Fallback: plain <title> tags inside <item>
+    if (headlines.length === 0) {
+      const plainRe = /<item>[\s\S]*?<title>(.*?)<\/title>/g
+      for (const m of xml.matchAll(plainRe)) {
+        if (headlines.length >= 5) break
+        const title = m[1].trim()
+        if (title) headlines.push(title)
+      }
+    }
+  } catch {
+    // Silently skip — not critical
+  }
+
+  // ── Reddit JSON (r/personalfinance + r/financialindependence) ─────────────
+  try {
+    const sub = 'personalfinance+financialindependence+povertyfinance'
+    const redditUrl = `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(keyword)}&sort=hot&limit=8&restrict_sr=true&t=month`
+    const res = await fetch(redditUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WealthBeginners/1.0)' },
+      signal: AbortSignal.timeout(6000),
+    })
+    const data = await res.json() as { data?: { children?: Array<{ data?: { title?: string; score?: number } }> } }
+    for (const post of data?.data?.children ?? []) {
+      if (redditPosts.length >= 5) break
+      const title = post?.data?.title?.trim()
+      if (title) redditPosts.push(title)
+    }
+  } catch {
+    // Silently skip — not critical
+  }
+
+  return { headlines, redditPosts }
 }
 
 export const handler = async (event: Event) => {
-  const { topicId, keyword, category, retryCount = 0, relatedArticle, leadMagnet } = event
+  const {
+    topicId, keyword, category, retryCount = 0,
+    relatedArticle, leadMagnet,
+    trendScore, relatedTrends = [], originalQuery,
+  } = event
   const attempt = retryCount + 1
 
   log({ lambda: 'content-generator', step: 'handler-start', status: 'start', pct: 0,
-    meta: { topicId, keyword, category, attempt } })
+    meta: { topicId, keyword, category, attempt, trendScore } })
 
   try {
-    // ── Step 1: Bedrock call ──────────────────────────────────────────────
+    // ── Step 1: Fetch live context (news + Reddit) ────────────────────────
+    await updateTopicStep(topicId, `Fetching live context · attempt ${attempt}/3`, dynamo, process.env.TOPICS_TABLE!)
+    log({ lambda: 'content-generator', step: 'fetch-live-context', status: 'start', pct: 5,
+      meta: { keyword } })
+
+    const liveContext = await fetchLiveContext(keyword)
+
+    log({ lambda: 'content-generator', step: 'fetch-live-context', status: 'complete', pct: 8,
+      meta: { headlines: liveContext.headlines.length, redditPosts: liveContext.redditPosts.length } })
+
+    // ── Step 2: Bedrock call ──────────────────────────────────────────────
     await updateTopicStep(topicId, `Generating content · attempt ${attempt}/3`, dynamo, process.env.TOPICS_TABLE!)
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'start', pct: 10,
       meta: { keyword, attempt } })
 
-    const article = await callBedrock(keyword, category, retryCount > 0, relatedArticle, leadMagnet)
+    const article = await callBedrock(
+      keyword, category, retryCount > 0,
+      relatedArticle, leadMagnet,
+      { trendScore, relatedTrends, originalQuery, liveContext },
+    )
 
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'complete', pct: 70,
       meta: { titleLength: (article.title as string)?.length, contentWords: (article.content as string)?.trim().split(/\s+/).length } })
@@ -45,8 +130,7 @@ export const handler = async (event: Event) => {
       if (retryCount < 2) {
         await updateTopicStep(topicId, `Quality retry · attempt ${attempt}/3 failed`, dynamo, process.env.TOPICS_TABLE!)
         return { ...event, retryCount: retryCount + 1, shouldRetry: true }
-      }
-      await updateTopic(topicId, 'FAILED', quality.issues.join('; '))
+      }      await updateTopic(topicId, 'FAILED', quality.issues.join('; '))
       throw new Error(`Quality gate failed after ${attempt} attempts: ${quality.issues.join('; ')}`)
     }
 
@@ -131,7 +215,13 @@ function buildPrompt(
   category: string,
   isRetry: boolean,
   relatedArticle?: string,
-  leadMagnet?: string
+  leadMagnet?: string,
+  trendCtx?: {
+    trendScore?: number
+    relatedTrends?: string[]
+    originalQuery?: string
+    liveContext?: LiveContext
+  },
 ): string {
   const year = new Date().getFullYear()
   const retryNote = isRetry
@@ -146,9 +236,56 @@ function buildPrompt(
     ? leadMagnet
     : 'Free Beginner Budget Spreadsheet'
 
-  return `Role: You are an elite personal finance copywriter writing for "WealthBeginners.com." Your tone is empathetic, fiercely honest, highly actionable, and conversational — like a smart friend giving advice over coffee.
-${retryNote}
+  // ── Build LIVE TREND CONTEXT block ────────────────────────────────────────
+  const trendLines: string[] = []
 
+  if (trendCtx?.trendScore !== undefined) {
+    const band =
+      trendCtx.trendScore >= 80 ? 'VERY HIGH (top trending right now)' :
+      trendCtx.trendScore >= 50 ? 'HIGH (actively trending)' :
+      trendCtx.trendScore >= 20 ? 'MODERATE (steady interest)' : 'EMERGING'
+    trendLines.push(`• Google Trends Interest Score: ${trendCtx.trendScore}/100 — ${band}`)
+  }
+
+  if (trendCtx?.originalQuery) {
+    trendLines.push(`• Seed search query that triggered this topic: "${trendCtx.originalQuery}"`)
+  }
+
+  if (trendCtx?.relatedTrends?.length) {
+    trendLines.push(`• People also search for (rising related queries):`)
+    trendCtx.relatedTrends.slice(0, 6).forEach(t => trendLines.push(`  - ${t}`))
+  }
+
+  const headlines = trendCtx?.liveContext?.headlines ?? []
+  if (headlines.length > 0) {
+    trendLines.push(`\n• What the news is currently saying about this topic (${year}):`)
+    headlines.forEach(h => trendLines.push(`  📰 ${h}`))
+  }
+
+  const redditPosts = trendCtx?.liveContext?.redditPosts ?? []
+  if (redditPosts.length > 0) {
+    trendLines.push(`\n• What real people are asking on Reddit right now:`)
+    redditPosts.forEach(r => trendLines.push(`  💬 ${r}`))
+  }
+
+  const trendBlock = trendLines.length > 0
+    ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LIVE TREND CONTEXT (use this to make the article feel current & authoritative)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${trendLines.join('\n')}
+
+INSTRUCTION: Your article MUST be anchored to what people are searching and discussing RIGHT NOW.
+- Address the rising related queries naturally within the article (weave them into subheadings or body)
+- Reference the news angle as a hook or a "📊 By the Numbers" callout if data is present
+- Answer the Reddit questions directly — these are REAL pain points beginners have TODAY
+- Do NOT copy or quote these sources — use them as inspiration to make content feel timely
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`
+    : ''
+
+  return `Role: You are an elite personal finance copywriter writing for "WealthBeginners.com." Your tone is empathetic, fiercely honest, highly actionable, and conversational — like a smart friend giving advice over coffee.
+${retryNote}${trendBlock}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ARTICLE BRIEF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -296,8 +433,20 @@ Respond ONLY with this JSON:
 \`\`\``
 }
 
-async function callBedrock(keyword: string, category: string, isRetry: boolean, relatedArticle?: string, leadMagnet?: string) {
-  const prompt = buildPrompt(keyword, category, isRetry, relatedArticle, leadMagnet)
+async function callBedrock(
+  keyword: string,
+  category: string,
+  isRetry: boolean,
+  relatedArticle?: string,
+  leadMagnet?: string,
+  trendCtx?: {
+    trendScore?: number
+    relatedTrends?: string[]
+    originalQuery?: string
+    liveContext?: LiveContext
+  },
+) {
+  const prompt = buildPrompt(keyword, category, isRetry, relatedArticle, leadMagnet, trendCtx)
 
   const command = new InvokeModelCommand({
     modelId: process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
