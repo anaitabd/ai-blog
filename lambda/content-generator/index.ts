@@ -165,7 +165,7 @@ export const handler = async (event: Event) => {
     // Inject any missing [INSERT PERSONAL ANECDOTE] markers before the quality
     // gate runs — prevents a pure formatting omission from burning a retry.
     const repairedContent = ensureAnecdotes(rawArticle.content as string)
-    const article = { ...rawArticle, content: repairedContent }
+    const article: Record<string, unknown> = { ...rawArticle, content: repairedContent }
 
     const beforeCount = (String(rawArticle.content).match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
     const afterCount  = (repairedContent.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
