@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { Suspense, useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 const TABS = [
   { id: 'status',   label: '📡 Channel Status' },
@@ -46,7 +47,30 @@ function Spinner() {
 }
 
 export default function YouTubePage() {
+  return (
+    <Suspense>
+      <YouTubePageInner />
+    </Suspense>
+  )
+}
+
+function YouTubePageInner() {
   const [tab, setTab] = useState('status')
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // ── OAuth connection result toast ───────────────────────────────────────────
+  const [oauthToast, setOauthToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+
+  useEffect(() => {
+    if (searchParams.get('connected') === '1') {
+      setOauthToast({ type: 'success', msg: '✅ YouTube connected! Refresh token stored in SSM.' })
+      router.replace('/admin/youtube')
+    } else if (searchParams.get('oauth_error')) {
+      setOauthToast({ type: 'error', msg: `❌ OAuth error: ${searchParams.get('oauth_error')}` })
+      router.replace('/admin/youtube')
+    }
+  }, [searchParams, router])
 
   // ── Channel status ──────────────────────────────────────────────────────────
   const [channel, setChannel] = useState<ChannelInfo | null>(null)
@@ -176,6 +200,18 @@ export default function YouTubePage() {
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold text-[#0B1628] mb-6">YouTube Channel Manager</h1>
+
+      {/* OAuth connection toast */}
+      {oauthToast && (
+        <div className={`mb-4 px-4 py-3 rounded-lg text-sm font-medium flex items-center justify-between ${
+          oauthToast.type === 'success'
+            ? 'bg-green-50 text-green-800 border border-green-200'
+            : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          <span>{oauthToast.msg}</span>
+          <button onClick={() => setOauthToast(null)} className="ml-4 opacity-60 hover:opacity-100 text-lg leading-none">&times;</button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {/* Tabs */}
