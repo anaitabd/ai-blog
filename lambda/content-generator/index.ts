@@ -99,25 +99,39 @@ function ensureAnecdotes(content: string): string {
     '\n[INSERT PERSONAL ANECDOTE: Share a concrete win or "aha moment" — a specific dollar amount, a goal reached, or the first time you saw real financial progress.]\n\n',
   ]
 
+  const needed = 3 - count
+
   // Collect all ## H2 heading positions
   const h2Positions: number[] = []
   const h2Re = /^## /gm
   let m: RegExpExecArray | null
   while ((m = h2Re.exec(content)) !== null) h2Positions.push(m.index)
 
-  // Need at least 3 sections to inject safely
-  if (h2Positions.length < 3) return content
+  let insertPositions: number[]
 
-  const needed = 3 - count
-  const spread = h2Positions.length
-  const rawIdx =
-    needed === 3 ? [0, Math.floor(spread / 2), spread - 1] :
-    needed === 2 ? [Math.floor(spread / 3), Math.floor(spread * 2 / 3)] :
-                   [Math.floor(spread / 2)]
+  if (h2Positions.length >= 3) {
+    // Preferred: spread across H2 sections
+    const spread = h2Positions.length
+    const rawIdx =
+      needed === 3 ? [0, Math.floor(spread / 2), spread - 1] :
+      needed === 2 ? [Math.floor(spread / 3), Math.floor(spread * 2 / 3)] :
+                     [Math.floor(spread / 2)]
+    insertPositions = rawIdx.map((idx) => h2Positions[Math.min(idx, spread - 1)])
+  } else {
+    // Fallback: inject at paragraph boundaries near 25 / 50 / 75 % of content
+    const fractions = needed === 3 ? [0.25, 0.50, 0.75] :
+                      needed === 2 ? [0.33, 0.66] : [0.50]
+    insertPositions = fractions.map((f) => {
+      const target = Math.floor(content.length * f)
+      // Find the next double-newline (paragraph break) from target position
+      const paraEnd = content.indexOf('\n\n', target)
+      return paraEnd >= 0 ? paraEnd + 2 : content.length
+    })
+  }
 
   // Insert back-to-front so earlier offsets are not shifted
-  const insertions = rawIdx
-    .map((idx, i) => ({ pos: h2Positions[Math.min(idx, spread - 1)], tpl: TEMPLATES[count + i] }))
+  const insertions = insertPositions
+    .map((pos, i) => ({ pos, tpl: TEMPLATES[count + i] }))
     .sort((a, b) => b.pos - a.pos)
 
   let result = content
