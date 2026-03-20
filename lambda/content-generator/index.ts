@@ -15,6 +15,9 @@ interface Event {
   trendScore?: number
   relatedTrends?: string[]
   originalQuery?: string
+  // Populated on retries so the prompt knows exactly what failed
+  qualityIssues?: string[]
+  qualityWarnings?: string[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +89,7 @@ export const handler = async (event: Event) => {
     topicId, keyword, category, retryCount = 0,
     relatedArticle, leadMagnet,
     trendScore, relatedTrends = [], originalQuery,
+    qualityIssues = [], qualityWarnings = [],
   } = event
   const attempt = retryCount + 1
 
@@ -111,7 +115,7 @@ export const handler = async (event: Event) => {
     const article = await callBedrock(
       keyword, category, retryCount > 0,
       relatedArticle, leadMagnet,
-      { trendScore, relatedTrends, originalQuery, liveContext },
+      { trendScore, relatedTrends, originalQuery, liveContext, qualityIssues, qualityWarnings },
     )
 
     log({ lambda: 'content-generator', step: 'bedrock-call', status: 'complete', pct: 70,
@@ -129,7 +133,13 @@ export const handler = async (event: Event) => {
 
       if (retryCount < 2) {
         await updateTopicStep(topicId, `Quality retry · attempt ${attempt}/3 failed`, dynamo, process.env.TOPICS_TABLE!)
-        return { ...event, retryCount: retryCount + 1, shouldRetry: true }
+        return {
+          ...event,
+          retryCount: retryCount + 1,
+          shouldRetry: true,
+          qualityIssues:   quality.issues,
+          qualityWarnings: quality.warnings,
+        }
       }      await updateTopic(topicId, 'FAILED', quality.issues.join('; '))
       throw new Error(`Quality gate failed after ${attempt} attempts: ${quality.issues.join('; ')}`)
     }
@@ -221,20 +231,57 @@ function buildPrompt(
     relatedTrends?: string[]
     originalQuery?: string
     liveContext?: LiveContext
+    qualityIssues?: string[]
+    qualityWarnings?: string[]
   },
 ): string {
   const year = new Date().getFullYear()
-  const retryNote = isRetry
-    ? '\n⚠️ RETRY: Previous draft was rejected. Stay under 2,000 words. Be MORE concise, not less.\n'
-    : ''
 
-  const relatedLink = relatedArticle
-    ? relatedArticle
-    : 'another relevant article on WealthBeginners'
+  const relatedLink = relatedArticle ?? 'another relevant article on WealthBeginners'
+  const cta         = leadMagnet     ?? 'Free Beginner Budget Spreadsheet'
 
-  const cta = leadMagnet
-    ? leadMagnet
-    : 'Free Beginner Budget Spreadsheet'
+  // ── Build targeted RETRY block ────────────────────────────────────────────
+  let retryNote = ''
+  if (isRetry) {
+    const issues   = trendCtx?.qualityIssues   ?? []
+    const warnings = trendCtx?.qualityWarnings ?? []
+    const lines: string[] = [
+      '🚨 RETRY ATTEMPT — Your previous draft was REJECTED by the quality gate.',
+      'Do NOT repeat the same mistakes. Read every failure below and fix ALL of them:',
+      '',
+    ]
+    if (issues.length > 0) {
+      lines.push('❌ HARD FAILURES (caused the rejection):')
+      issues.forEach(i => lines.push(`   • ${i}`))
+      lines.push('')
+    }
+    if (warnings.length > 0) {
+      lines.push('⚠️  WARNINGS (fix these too):')
+      warnings.forEach(w => lines.push(`   • ${w}`))
+      lines.push('')
+    }
+    // Targeted fix instructions based on what actually failed
+    const allText = [...issues, ...warnings].join(' ').toLowerCase()
+    if (allText.includes('too short') || allText.includes('words')) {
+      lines.push('✏️  WORD COUNT FIX: Write MORE. Target 1,700–1,900 words. Expand every section.')
+    }
+    if (allText.includes('anecdote') || allText.includes('e-e-a-t')) {
+      lines.push('✏️  ANECDOTE FIX: You MUST have EXACTLY 3 [INSERT PERSONAL ANECDOTE: …] placeholders — one in the intro, one in the middle, one near the end. Do not skip any.')
+    }
+    if (allText.includes('h2') || allText.includes('section')) {
+      lines.push('✏️  SECTIONS FIX: You MUST have at least 5 ## H2 headings in the article body.')
+    }
+    if (allText.includes('callout') || allText.includes('💡') || allText.includes('⚠️') || allText.includes('📊')) {
+      lines.push('✏️  CALLOUT FIX: You MUST include at least one 💡 Pro Tip, one ⚠️ Warning, and one 📊 By the Numbers callout box.')
+    }
+    if (allText.includes('internal link')) {
+      lines.push('✏️  LINK FIX: Include a natural internal link in the middle of the article to a related WealthBeginners post.')
+    }
+    if (allText.includes('banned') || allText.includes('ai word')) {
+      lines.push('✏️  LANGUAGE FIX: Remove ALL banned AI words (delve, crucial, leverage, utilize, tapestry, furthermore, robust, etc.). Rewrite those sentences in plain English.')
+    }
+    retryNote = '\n' + lines.join('\n') + '\n'
+  }
 
   // ── Build LIVE TREND CONTEXT block ────────────────────────────────────────
   const trendLines: string[] = []
@@ -444,6 +491,8 @@ async function callBedrock(
     relatedTrends?: string[]
     originalQuery?: string
     liveContext?: LiveContext
+    qualityIssues?: string[]
+    qualityWarnings?: string[]
   },
 ) {
   const prompt = buildPrompt(keyword, category, isRetry, relatedArticle, leadMagnet, trendCtx)
