@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Type-check · Lint · Test · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        env:
+          # Dummy URL so prisma generate works without a real DB
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          ADMIN_API_KEY: ci-test-admin-key
+          NEXT_PUBLIC_SITE_URL: https://www.wealthbeginners.com
+          NEXT_PUBLIC_GA4_ID: G-PDQELT04X9
+          INTERNAL_SECRET: ci-internal-secret
+          WEBHOOK_SECRET: ci-webhook-secret
+
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          ADMIN_API_KEY: ci-test-admin-key
+          NEXTJS_SITE_URL: https://www.wealthbeginners.com
+          NEXT_PUBLIC_SITE_URL: https://www.wealthbeginners.com
+          NEXT_PUBLIC_GA4_ID: G-PDQELT04X9
+          CLOUDFRONT_DOMAIN: d1vqj5mvj2lux4.cloudfront.net
+          INTERNAL_SECRET: ci-internal-secret
+          WEBHOOK_SECRET: ci-webhook-secret
+          SES_FROM_EMAIL: no-reply@wealthbeginners.com
+          TOPICS_TABLE: ai-blog-topics
+          STATE_MACHINE_ARN: arn:aws:states:us-east-1:000000000000:stateMachine:ci
+          YOUTUBE_ON_DEMAND_ARN: arn:aws:states:us-east-1:000000000000:stateMachine:ci-yt

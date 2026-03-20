@@ -56,6 +56,9 @@ const nextConfig = {
     ANTHROPIC_API_KEY:     process.env.ANTHROPIC_API_KEY,
     // Email
     RESEND_API_KEY:        process.env.RESEND_API_KEY,
+    // YouTube OAuth2 (values set in Amplify Console env vars)
+    YOUTUBE_CLIENT_ID:     process.env.YOUTUBE_CLIENT_ID,
+    YOUTUBE_CLIENT_SECRET: process.env.YOUTUBE_CLIENT_SECRET,
     NEXT_PUBLIC_GA4_ID:    'G-PDQELT04X9',
     NEXT_PUBLIC_SITE_URL:  'https://www.wealthbeginners.com',
   },
