@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Reset all FAILED topics in DynamoDB back to PENDING so the pipeline retries them.
+// Reset all FAILED topics (and stale PENDING-with-failReason) in DynamoDB back to clean PENDING.
 // Usage:  node scripts/reset-failed-topics.js
 //         node scripts/reset-failed-topics.js --dry-run
 
@@ -12,27 +12,54 @@ const TABLE   = process.env.TOPICS_TABLE ?? 'ai-blog-topics'
 
 const dynamo = new DynamoDBClient({ region: REGION })
 
-async function main() {
-  console.log(`\n🔍 Scanning ${TABLE} for FAILED topics…${DRY_RUN ? ' (dry-run)' : ''}\n`)
+/** Paginated scan — collects ALL matching items regardless of table size. */
+async function scanAll(params) {
+  const items = []
+  let lastKey
+  do {
+    const res = await dynamo.send(new ScanCommand({ ...params, ExclusiveStartKey: lastKey }))
+    items.push(...(res.Items ?? []))
+    lastKey = res.LastEvaluatedKey
+  } while (lastKey)
+  return items
+}
 
-  const res = await dynamo.send(new ScanCommand({
+async function main() {
+  console.log(`\n🔍 Scanning ${TABLE} for FAILED / stale PENDING topics…${DRY_RUN ? ' (dry-run)' : ''}\n`)
+
+  // 1. All FAILED items
+  const failed = await scanAll({
     TableName: TABLE,
     FilterExpression: '#s = :failed',
     ExpressionAttributeNames: { '#s': 'status' },
     ExpressionAttributeValues: { ':failed': { S: 'FAILED' } },
-  }))
+  })
 
-  const items = res.Items ?? []
+  // 2. PENDING items that still carry a failReason (stuck from old publisher retry)
+  const stalePending = await scanAll({
+    TableName: TABLE,
+    FilterExpression: 'attribute_exists(failReason) AND #s = :p',
+    ExpressionAttributeNames: { '#s': 'status' },
+    ExpressionAttributeValues: { ':p': { S: 'PENDING' } },
+  })
 
-  if (items.length === 0) {
-    console.log('✅ No FAILED topics found — nothing to reset.')
+  // Deduplicate by id
+  const seen = new Set()
+  const all = [...failed, ...stalePending].filter(i => {
+    if (!i.id?.S || seen.has(i.id.S)) return false
+    seen.add(i.id.S)
+    return true
+  })
+
+  if (all.length === 0) {
+    console.log('✅ No FAILED or stale PENDING topics found — nothing to reset.')
     return
   }
 
-  console.log(`Found ${items.length} FAILED topic(s):\n`)
-  items.forEach((item) => {
+  console.log(`Found ${all.length} item(s) to reset:\n`)
+  all.forEach((item) => {
     const reason = item.failReason?.S?.slice(0, 100) ?? '—'
-    console.log(`  • [${item.category?.S ?? '?'}] ${item.keyword?.S}`)
+    console.log(`  • [${item.status?.S}] [${item.category?.S ?? '?'}] ${item.keyword?.S}`)
     console.log(`    Reason: ${reason}\n`)
   })
 
@@ -42,7 +69,7 @@ async function main() {
   }
 
   let reset = 0
-  for (const item of items) {
+  for (const item of all) {
     await dynamo.send(new UpdateItemCommand({
       TableName: TABLE,
       Key: { id: { S: item.id.S } },
@@ -54,11 +81,10 @@ async function main() {
     reset++
   }
 
-  console.log(`\n✅ Done — ${reset} topic(s) reset to PENDING. Trigger the pipeline to process them.`)
+  console.log(`\n✅ Done — ${reset} topic(s) reset to PENDING.`)
 }
 
 main().catch((err) => {
   console.error('Error:', err.message)
   process.exit(1)
 })
-

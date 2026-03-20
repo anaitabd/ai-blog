@@ -4,6 +4,17 @@ require('dotenv').config()
 
 const dynamo = new DynamoDBClient({ region: 'us-east-1' })
 
+async function scanAll(params) {
+  const items = []
+  let lastKey
+  do {
+    const res = await dynamo.send(new ScanCommand({ ...params, ExclusiveStartKey: lastKey }))
+    items.push(...(res.Items ?? []))
+    lastKey = res.LastEvaluatedKey
+  } while (lastKey)
+  return items
+}
+
 async function check() {
   const processing = await dynamo.send(new QueryCommand({
     TableName: 'ai-blog-topics',
@@ -14,7 +25,7 @@ async function check() {
   }))
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const recent = await dynamo.send(new ScanCommand({
+  const recent = await scanAll({
     TableName: 'ai-blog-topics',
     FilterExpression: '(#s = :done OR #s = :failed) AND processedAt >= :since',
     ExpressionAttributeNames: { '#s': 'status' },
@@ -23,9 +34,9 @@ async function check() {
       ':failed':{ S: 'FAILED' },
       ':since': { S: since },
     },
-  }))
+  })
 
-  const all = [...(processing.Items ?? []), ...(recent.Items ?? [])]
+  const all = [...(processing.Items ?? []), ...recent]
   if (all.length === 0) { console.log('No active or recent pipeline runs in the last 2h.'); return }
 
   // Deduplicate
