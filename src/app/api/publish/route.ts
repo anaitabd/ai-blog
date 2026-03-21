@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { runQualityGate, calcReadingTime } from '@/lib/quality-gate'
+import { runQualityGateSync as runQualityGate, calcReadingTime } from '@/lib/quality-gate'
 import { sanitizePostContent } from '@/lib/content-sanitizer'
 import { fetchPexelsImage, fetchUnsplashImage, uploadImageToS3 } from '@/lib/image-service'
 import { analyzeSEO, enhancePostContent } from '@/lib/claude-seo-engine'

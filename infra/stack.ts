@@ -77,6 +77,20 @@ export class AiBlogStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     })
 
+    // ─── S3 Bucket for YouTube Shorts Output ───────────────
+    const shortsBucket = new s3.Bucket(this, 'ShortsBucket', {
+      bucketName: `ai-blog-shorts-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    })
+
+    // ─── S3 Bucket for Static Assets (bg music, etc.) ───────
+    const assetsBucket = new s3.Bucket(this, 'AssetsBucket', {
+      bucketName: `ai-blog-assets-${this.account}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    })
+
     // ─── CloudFront CDN for Images ──────────────────────────
     const imagesCdn = new cloudfront.Distribution(this, 'ImagesCdn', {
       defaultBehavior: {
@@ -220,14 +234,20 @@ export class AiBlogStack extends cdk.Stack {
       functionName: 'ai-blog-youtube-shorts-generator',
       entry: path.join(lambdaDir, 'youtube-shorts-generator', 'index.ts'),
       runtime: lambda.Runtime.NODEJS_20_X,
-      timeout: cdk.Duration.minutes(15),          // max Lambda timeout — Nova Reel polling + FFmpeg
-      memorySize: 3008,                            // FFmpeg video encoding needs headroom
-      ephemeralStorageSize: cdk.Size.mebibytes(4096), // 4 GB /tmp for raw + vertical clips
+      timeout: cdk.Duration.minutes(25),          // Nova Reel polling (up to 15 min) + FFmpeg assembly
+      memorySize: 10240,                           // FFmpeg 4K→1080p encoding needs max headroom
+      ephemeralStorageSize: cdk.Size.mebibytes(10240), // 10 GB /tmp for 9 raw scenes + final output
       deadLetterQueue: ytGeneratorDlq,
       layers: [ffmpegLayer],
       environment: {
         ...sharedEnv,
-        FFMPEG_PATH: '/opt/bin/ffmpeg',
+        FFMPEG_PATH:       '/opt/bin/ffmpeg',
+        NOVA_REEL_MODEL:   'amazon.nova-reel-v1:1',
+        NOVA_CANVAS_MODEL: 'amazon.nova-canvas-v1:0',
+        POLLY_VOICE_ID:    'Stephen',
+        SHORTS_BUCKET:     shortsBucket.bucketName,
+        ASSETS_BUCKET:     assetsBucket.bucketName,
+        PIXABAY_API_KEY:   process.env.PIXABAY_API_KEY ?? '',
       },
     })
 
@@ -237,6 +257,7 @@ export class AiBlogStack extends cdk.Stack {
         'bedrock:InvokeModel',
         'bedrock:StartAsyncInvoke',
         'bedrock:GetAsyncInvoke',
+        'bedrock:ListAsyncInvokes',
       ],
       resources: ['*'],
     }))
@@ -246,6 +267,8 @@ export class AiBlogStack extends cdk.Stack {
       resources: ['*'],
     }))
     imagesBucket.grantReadWrite(youtubeGeneratorFn)
+    assetsBucket.grantRead(youtubeGeneratorFn)
+    shortsBucket.grantPut(youtubeGeneratorFn)
     youtubeGeneratorFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter', 'ssm:GetParameters'],
       resources: [
@@ -263,8 +286,10 @@ export class AiBlogStack extends cdk.Stack {
       deadLetterQueue: ytPublisherDlq,
       environment: {
         ...sharedEnv,
-        NEXTJS_SITE_URL:  process.env.NEXTJS_SITE_URL  ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
-        INTERNAL_SECRET:  process.env.INTERNAL_SECRET  ?? '6c13452975531ad43e1fd57b46fd003a03606dc7a5d2b723b5c9b5e6cad4a2ee',
+        NEXTJS_SITE_URL:      process.env.NEXTJS_SITE_URL      ?? 'https://main.d33pu7f2pby8t4.amplifyapp.com',
+        INTERNAL_SECRET:      process.env.INTERNAL_SECRET      ?? '6c13452975531ad43e1fd57b46fd003a03606dc7a5d2b723b5c9b5e6cad4a2ee',
+        GOOGLE_CLIENT_ID:     process.env.GOOGLE_CLIENT_ID     ?? '',
+        GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? '',
       },
     })
 

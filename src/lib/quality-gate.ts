@@ -2,13 +2,42 @@
 //  WealthBeginners Quality Gate — Cyborg Blogger Edition
 //  Enforces the 6 WealthBeginners writing rules on every article
 // ─────────────────────────────────────────────────────────────────────────────
+import type { PrismaClient } from '@prisma/client'
 
+// PASS_THRESHOLD: minimum score to avoid immediate FAILED status (goes to REVIEW)
+const PASS_THRESHOLD    = 85
+// PUBLISH_THRESHOLD: score required for automatic PUBLISHED status
+const PUBLISH_THRESHOLD = 95
+
+export interface QualityIssue {
+  severity: 'HARD_FAIL' | 'WARN'
+  code:     string
+  message:  string
+  points:   number
+}
+
+export interface QualityResult {
+  passed:        boolean
+  status:        'PUBLISHED' | 'REVIEW' | 'FAILED'
+  score:         number
+  seoScore:      number
+  wordCount:     number
+  h2Count:       number
+  sourceCount:   number
+  statsCount:    number
+  issues:        string[]
+  warnings:      string[]
+  checkedAt:     string
+  attemptNumber: number
+}
+
+// Legacy shape — kept for backward compat with publish route + tests
 export interface QualityReport {
-  passed: boolean
+  passed:    boolean
   wordCount: number
-  score: number
-  issues: string[]
-  warnings: string[]
+  score:     number
+  issues:    string[]
+  warnings:  string[]
 }
 
 // Banned AI words — immediate score penalty
@@ -28,10 +57,111 @@ const PROHIBITED = [
   /\b(hack account|crack password|pirate software)\b/i,
 ]
 
-export function runQualityGate(content: string): QualityReport {
-  const issues: string[] = []
+// ─── NEW CHECK A — Source credibility ────────────────────────────────────────
+function checkSourceCredibility(content: string): QualityIssue[] {
+  const statsMatches  = content.match(/\d+%|\$[\d,]+|[\d.]+ (?:million|billion)/gi) ?? []
+  const sourceMatches = content.match(/according to|reported by|per [A-Z]/gi) ?? []
+  const statsCount    = statsMatches.length
+  const sourceCount   = sourceMatches.length
+  const result: QualityIssue[] = []
+
+  if (statsCount > 0 && sourceCount === 0) {
+    result.push({
+      severity: 'HARD_FAIL',
+      code:     'NO_SOURCES',
+      points:   -30,
+      message:  'Article contains statistics but cites zero sources',
+    })
+  } else if (statsCount > 4 && sourceCount < 2) {
+    result.push({
+      severity: 'HARD_FAIL',
+      code:     'UNSOURCED_STATS',
+      points:   -20,
+      message:  `${statsCount} statistics found but fewer than 2 sources cited`,
+    })
+  }
+
+  return result
+}
+
+// ─── NEW CHECK B — Slug uniqueness ───────────────────────────────────────────
+async function checkSlugUnique(slug: string, prisma: PrismaClient): Promise<QualityIssue[]> {
+  const existing = await prisma.post.findUnique({ where: { slug } })
+  if (existing) {
+    return [{
+      severity: 'HARD_FAIL',
+      code:     'DUPLICATE_SLUG',
+      points:   -100,
+      message:  `Slug "${slug}" already exists`,
+    }]
+  }
+  return []
+}
+
+// ─── NEW CHECK C — Content uniqueness (Jaccard similarity) ───────────────────
+async function checkContentUniqueness(title: string, prisma: PrismaClient): Promise<QualityIssue[]> {
+  const since = new Date()
+  since.setDate(since.getDate() - 60)
+
+  const recentPosts = await prisma.post.findMany({
+    where: { publishedAt: { gte: since } },
+    select: { title: true },
+  })
+
+  const titleWords = new Set(title.toLowerCase().split(/\s+/))
+
+  for (const post of recentPosts) {
+    const postWords   = new Set(post.title.toLowerCase().split(/\s+/))
+    const intersection = new Set(Array.from(titleWords).filter(w => postWords.has(w)))
+    const union        = new Set([...Array.from(titleWords), ...Array.from(postWords)])
+    const similarity   = union.size === 0 ? 0 : intersection.size / union.size
+
+    if (similarity > 0.65) {
+      return [{
+        severity: 'HARD_FAIL',
+        code:     'SIMILAR_CONTENT',
+        points:   -50,
+        message:  `Too similar to existing post: "${post.title}"`,
+      }]
+    }
+  }
+
+  return []
+}
+
+// ─── NEW CHECK D — SEO score ─────────────────────────────────────────────────
+function checkSEOScore(content: string, title: string, slug: string): number {
+  let seo = 0
+  if (title.length >= 40 && title.length <= 65)  seo += 25
+  if (slug.length <= 60)                          seo += 15
+  if ((content.match(/^## /gm) ?? []).length >= 5) seo += 20
+  const internalLinks = (content.match(/\[.+?\]\(\/.+?\)/g) ?? []).length +
+                        (content.match(/wealthbeginners\.com\//gi) ?? []).length
+  if (internalLinks >= 3)                         seo += 20
+  if (content.length >= 7000)                     seo += 20
+  return seo
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Main quality gate — async for DB checks
+// ─────────────────────────────────────────────────────────────────────────────
+export async function runQualityGate(
+  content: string,
+  opts?: {
+    slug?:          string
+    title?:         string
+    prisma?:        PrismaClient
+    attemptNumber?: number
+  },
+): Promise<QualityResult> {
+  const issues: string[]   = []
   const warnings: string[] = []
   let score = 100
+
+  const slug          = opts?.slug          ?? ''
+  const title         = opts?.title         ?? ''
+  const prismaClient  = opts?.prisma
+  const attemptNumber = opts?.attemptNumber ?? 1
 
   // ── Word Count (Rule 1) ────────────────────────────────────────────────
   const wordCount = content.trim().split(/\s+/).length
@@ -111,8 +241,6 @@ export function runQualityGate(content: string): QualityReport {
   }
 
   // ── E-E-A-T Placeholders (Rule 5) ─────────────────────────────────────
-  // Hard failure ONLY when the model wrote zero (complete rule skip).
-  // 1–2 is a warning — ensureAnecdotes() in the Lambda already auto-injected the rest.
   const anecdoteCount = (content.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
   if (anecdoteCount === 0) {
     issues.push(`Only ${anecdoteCount} E-E-A-T placeholders (need exactly 3 — Google requires Experience signals)`)
@@ -122,7 +250,7 @@ export function runQualityGate(content: string): QualityReport {
     score -= 5
   }
 
-  // ── Real Data (supporting Rule 4) ─────────────────────────────────────
+  // ── Real Data (Rule 4 support) ─────────────────────────────────────────
   const hasStats = /according to|per the|data from|research (shows|found)|survey (found|shows)|reports that/i.test(content)
   if (!hasStats) {
     warnings.push('No cited statistics found — add at least 3 real data points with source names')
@@ -144,18 +272,109 @@ export function runQualityGate(content: string): QualityReport {
     }
   }
 
+  // ── NEW CHECK A — Source credibility ──────────────────────────────────
+  const statsMatches  = content.match(/\d+%|\$[\d,]+|[\d.]+ (?:million|billion)/gi) ?? []
+  const sourceMatches = content.match(/according to|reported by|per [A-Z]/gi) ?? []
+  const statsCount    = statsMatches.length
+  const sourceCount   = sourceMatches.length
+
+  const credibilityIssues = checkSourceCredibility(content)
+  for (const ci of credibilityIssues) {
+    issues.push(ci.message)
+    score += ci.points // points are negative
+  }
+
+  // ── NEW CHECK D — SEO score ────────────────────────────────────────────
+  const seoScore = checkSEOScore(content, title, slug)
+
+  // ── NEW CHECK B & C — async DB checks (only when prisma provided) ──────
+  if (prismaClient) {
+    if (slug) {
+      const slugIssues = await checkSlugUnique(slug, prismaClient)
+      for (const si of slugIssues) {
+        issues.push(si.message)
+        score += si.points
+      }
+    }
+    if (title) {
+      const uniqueIssues = await checkContentUniqueness(title, prismaClient)
+      for (const ui of uniqueIssues) {
+        issues.push(ui.message)
+        score += ui.points
+      }
+    }
+  }
+
+  const finalScore = Math.max(0, score)
+
+  const status: 'PUBLISHED' | 'REVIEW' | 'FAILED' =
+    finalScore >= PUBLISH_THRESHOLD ? 'PUBLISHED' :
+    finalScore >= PASS_THRESHOLD    ? 'REVIEW'    :
+    'FAILED'
+
   return {
-    passed: issues.length === 0 && score >= 60,
+    passed:        issues.length === 0 && finalScore >= PASS_THRESHOLD,
+    status,
+    score:         finalScore,
+    seoScore,
     wordCount,
-    score: Math.max(0, score),
+    h2Count,
+    sourceCount,
+    statsCount,
     issues,
     warnings,
+    checkedAt:     new Date().toISOString(),
+    attemptNumber,
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Synchronous wrapper — backward compat for publish route + tests
+//  (skips async DB checks — use runQualityGate() directly for full validation)
+// ─────────────────────────────────────────────────────────────────────────────
+export function runQualityGateSync(content: string): QualityReport {
+  const issues: string[]   = []
+  const warnings: string[] = []
+  let score = 100
+
+  const wordCount = content.trim().split(/\s+/).length
+  if (wordCount < 1400) { issues.push(`Too short: ${wordCount} words (minimum 1,400)`);          score -= 30 }
+  else if (wordCount > 2100) { issues.push(`Too long: ${wordCount} words (maximum 2,000 — trim it down)`); score -= 20 }
+  else if (wordCount > 1900) { warnings.push(`Word count ${wordCount} is close to the 2,000 cap — consider trimming`); score -= 5 }
+
+  const foundBanned: string[] = []
+  for (const word of BANNED_WORDS) {
+    if (new RegExp(`\\b${word}\\b`, 'i').test(content)) foundBanned.push(word)
+  }
+  if (foundBanned.length > 0) { warnings.push(`Banned AI words found: ${foundBanned.join(', ')} — regenerate`); score -= foundBanned.length * 5 }
+
+  const genericIntros = [/^in today'?s (world|financial landscape|economy)/im,/^are you (looking|struggling|trying) to/im,/^managing (your )?finances (can be|is)/im,/^when it comes to/im]
+  for (const p of genericIntros) { if (p.test(content.slice(0, 300))) { warnings.push('Generic intro detected — first sentence should be a hook (stat, pain point, or hard truth)'); score -= 10; break } }
+
+  const h2Count = (content.match(/^## /gm) || []).length
+  if (h2Count < 4) { issues.push(`Only ${h2Count} H2 sections (minimum 4 needed)`); score -= 15 }
+  if (!/\*\*[^*]{10,}\*\*/.test(content)) { warnings.push('No bolded sentences found — bold the key takeaway in each section'); score -= 5 }
+
+  const totalCallouts = (content.match(/💡/g)||[]).length + (content.match(/⚠️/g)||[]).length + (content.match(/📊/g)||[]).length
+  if (totalCallouts < 3) { warnings.push(`Only ${totalCallouts} callout boxes (need at least 3: 💡 ⚠️ 📊)`); score -= 8 }
+  if (!content.includes('|---|') && !content.includes('| --- |')) { warnings.push('No comparison table found — add one for scannability and SEO'); score -= 5 }
+  if (!/\[INTERNAL_LINK:/i.test(content) && !/wealthbeginners\.com\//i.test(content)) { warnings.push('No internal link placeholder found — add [INTERNAL_LINK: topic] in the middle'); score -= 8 }
+
+  const anecdoteCount = (content.match(/\[INSERT PERSONAL ANECDOTE/gi) || []).length
+  if (anecdoteCount === 0) { issues.push(`Only ${anecdoteCount} E-E-A-T placeholders (need exactly 3 — Google requires Experience signals)`); score -= 20 }
+  else if (anecdoteCount < 3) { warnings.push(`Only ${anecdoteCount} E-E-A-T placeholder(s) — auto-repair injected the rest`); score -= 5 }
+
+  if (!/according to|per the|data from|research (shows|found)|survey (found|shows)|reports that/i.test(content)) { warnings.push('No cited statistics found — add at least 3 real data points with source names'); score -= 10 }
+  if (/in conclusion|to summarize|to wrap up|in summary|as we've (seen|discussed)/.test(content.slice(-500).toLowerCase())) { warnings.push('Generic AI conclusion detected — remove it, end with the CTA directly'); score -= 10 }
+
+  for (const pattern of PROHIBITED) {
+    if (pattern.test(content)) { issues.push(`Prohibited content detected: ${pattern.source}`); score -= 50 }
+  }
+
+  return { passed: issues.length === 0 && score >= 60, wordCount, score: Math.max(0, score), issues, warnings }
+}
+
 export function calcReadingTime(wordCount: number): number {
-  // Average adult reads 200–220 words per minute
-  // WealthBeginners target: 7-minute reads = 1,400–1,540 words
   return Math.ceil(wordCount / 215)
 }
 

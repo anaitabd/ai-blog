@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/admin/posts',        icon: '📝', label: 'Posts',         badge: 'pending' },
   { href: '/admin/topics',       icon: '🎯', label: 'Topics' },
   { href: '/admin/youtube',      icon: '🎬', label: 'YouTube' },
+  { href: '/admin/logs',         icon: '📋', label: 'Logs' },
   { href: '/admin/email',        icon: '📧', label: 'Email' },
   { href: '/admin/quality',      icon: '🌟', label: 'Quality' },
   { href: '/admin/monetization', icon: '💰', label: 'Monetization' },

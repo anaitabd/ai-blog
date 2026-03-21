@@ -50,13 +50,17 @@ export default function Header() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Close categories dropdown on outside click
+  // Close categories dropdown on outside click (mousedown + touchstart for iOS)
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | TouchEvent) => {
       if (catRef.current && !catRef.current.contains(e.target as Node)) setCatOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
   }, [])
 
   useEffect(() => {

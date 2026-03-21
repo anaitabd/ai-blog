@@ -53,10 +53,12 @@ export const handler = async (event: PublisherEvent) => {
     '/wealthbeginners/youtube/client-id',
     '/wealthbeginners/youtube/client-secret',
     '/wealthbeginners/youtube/refresh-token',
+    '/wealthbeginners/youtube/channel-id',
   ])
-  const clientId     = params['/wealthbeginners/youtube/client-id']
-  const clientSecret = params['/wealthbeginners/youtube/client-secret']
-  const refreshToken = params['/wealthbeginners/youtube/refresh-token']
+  const clientId       = params['/wealthbeginners/youtube/client-id']
+  const clientSecret   = params['/wealthbeginners/youtube/client-secret']
+  const refreshToken   = params['/wealthbeginners/youtube/refresh-token']
+  const expectedChannelId = params['/wealthbeginners/youtube/channel-id']
 
   const nextjsUrl    = process.env.NEXTJS_SITE_URL!
   const internalSecret = process.env.INTERNAL_SECRET!
@@ -65,6 +67,26 @@ export const handler = async (event: PublisherEvent) => {
   log({ lambda: 'youtube-shorts-publisher', step: 'oauth-refresh', status: 'start', pct: 5 })
   const accessToken = await refreshAccessToken(clientId, clientSecret, refreshToken)
   log({ lambda: 'youtube-shorts-publisher', step: 'oauth-refresh', status: 'complete', pct: 10 })
+
+  // ── Verify the OAuth token belongs to the expected channel ───────────────
+  if (expectedChannelId) {
+    log({ lambda: 'youtube-shorts-publisher', step: 'channel-verify', status: 'start', pct: 12 })
+    const channelRes = await fetch(
+      'https://www.googleapis.com/youtube/v3/channels?part=id&mine=true',
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    )
+    if (channelRes.ok) {
+      const channelData = await channelRes.json() as { items?: Array<{ id: string }> }
+      const actualChannelId = channelData.items?.[0]?.id
+      if (actualChannelId && actualChannelId !== expectedChannelId) {
+        const msg = `WRONG_CHANNEL: OAuth token belongs to channel ${actualChannelId}, expected ${expectedChannelId}. Reconnect YouTube in admin panel.`
+        log({ lambda: 'youtube-shorts-publisher', step: 'channel-verify', status: 'error', pct: 12,
+          meta: { actualChannelId, expectedChannelId, error: msg } })
+        throw new Error(msg)
+      }
+    }
+    log({ lambda: 'youtube-shorts-publisher', step: 'channel-verify', status: 'complete', pct: 13 })
+  }
 
   const publishedVideos: PublishedVideo[] = []
 

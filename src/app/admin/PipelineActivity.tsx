@@ -189,9 +189,24 @@ export default function PipelineActivity() {
   }, [fetchPipeline])
 
   useEffect(() => {
-    fetchPipeline()
-    const id = setInterval(fetchPipeline, POLL_INTERVAL_MS)
-    return () => clearInterval(id)
+    let intervalId: NodeJS.Timeout
+
+    const startPolling = () => {
+      fetchPipeline()
+      intervalId = setInterval(fetchPipeline, POLL_INTERVAL_MS)
+    }
+    const stopPolling = () => clearInterval(intervalId)
+
+    const handleVisibility = () =>
+      document.hidden ? stopPolling() : startPolling()
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    startPolling()
+
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [fetchPipeline])
 
   const running  = items.filter((i) => i.status === 'PROCESSING').length

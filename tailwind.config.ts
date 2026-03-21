@@ -4,6 +4,9 @@ const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      screens: {
+        'xs': '475px',
+      },
       fontFamily: {
         serif: ['"Playfair Display"', 'Georgia', 'serif'],
         sans:  ['"DM Sans"', 'system-ui', 'sans-serif'],

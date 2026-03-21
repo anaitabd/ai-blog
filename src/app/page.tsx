@@ -14,19 +14,57 @@ interface Props {
   searchParams: { category?: string }
 }
 
+// ─── Skeleton shown while PostGrid streams in ────────────────────────────────
+function PostGridSkeleton() {
+  return (
+    <div className="grid sm:grid-cols-2 gap-6 animate-pulse">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className={`bg-gray-200 rounded-2xl h-64 ${i === 0 ? 'sm:col-span-2' : ''}`}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ─── Async server component — does the DB query ──────────────────────────────
+async function PostGrid({ categoryFilter }: { categoryFilter?: string }) {
+  const posts = await prisma.post.findMany({
+    where: {
+      status: 'PUBLISHED',
+      ...(categoryFilter ? { category: { slug: categoryFilter } } : {}),
+    },
+    orderBy: { publishedAt: 'desc' },
+    take: 12,
+    include: { category: true, tags: true },
+  })
+
+  if (posts.length === 0) {
+    return (
+      <div className="text-center py-20 text-muted">
+        <p className="text-xl font-serif">No articles published yet.</p>
+        <p className="text-sm mt-2">The pipeline will generate content soon.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid sm:grid-cols-2 gap-6">
+      {posts.map((post, i) => (
+        <div key={post.id} className={i === 0 ? 'sm:col-span-2' : ''}>
+          <ArticleCard post={post} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Page — renders instantly, streams PostGrid ──────────────────────────────
 export default async function HomePage({ searchParams }: Props) {
   const categoryFilter = searchParams.category
 
-  const [posts, featuredPost, subscriberCount] = await Promise.all([
-    prisma.post.findMany({
-      where: {
-        status: 'PUBLISHED',
-        ...(categoryFilter ? { category: { slug: categoryFilter } } : {}),
-      },
-      orderBy: { publishedAt: 'desc' },
-      take: 12,
-      include: { category: true, tags: true },
-    }),
+  const [featuredPost, subscriberCount] = await Promise.all([
     prisma.post.findFirst({
       where: { status: 'PUBLISHED' },
       orderBy: { publishedAt: 'desc' },
@@ -130,20 +168,9 @@ export default async function HomePage({ searchParams }: Props) {
               </h2>
             </div>
 
-            {posts.length === 0 ? (
-              <div className="text-center py-20 text-muted">
-                <p className="text-xl font-serif">No articles published yet.</p>
-                <p className="text-sm mt-2">The pipeline will generate content soon.</p>
-              </div>
-            ) : (
-              <div className="grid sm:grid-cols-2 gap-6">
-                {posts.map((post, i) => (
-                  <div key={post.id} className={i === 0 ? 'sm:col-span-2' : ''}>
-                    <ArticleCard post={post} />
-                  </div>
-                ))}
-              </div>
-            )}
+            <Suspense fallback={<PostGridSkeleton />}>
+              <PostGrid categoryFilter={categoryFilter} />
+            </Suspense>
 
             <NewsletterInline />
           </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runQualityGate } from '@/lib/quality-gate'
+import { runQualityGateSync as runQualityGate } from '@/lib/quality-gate'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function makeContent(words: number, h2s = 5, bullets = 5): string {

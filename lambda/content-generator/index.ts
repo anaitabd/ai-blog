@@ -195,6 +195,22 @@ export const handler = async (event: Event) => {
 
     const quality = checkQuality(article.content as string)
 
+    // ── Log full quality result to CloudWatch ─────────────────────────────
+    log({ lambda: 'content-generator', step: 'quality-gate-result', status: 'complete', pct: 80,
+      meta: {
+        event:       'QUALITY_GATE_RESULT',
+        score:       quality.score,
+        status:      quality.status,
+        seoScore:    quality.seoScore,
+        wordCount:   quality.wordCount,
+        sourceCount: quality.sourceCount,
+        issues:      quality.issues,
+        attempt:     quality.attemptNumber,
+        slug:        (article.slug as string) ?? '',
+        title:       (article.title as string) ?? '',
+        checkedAt:   quality.checkedAt,
+      } })
+
     if (!quality.passed) {
       log({ lambda: 'content-generator', step: 'quality-gate', status: 'warn', pct: 75,
         meta: { issues: quality.issues, attempt } })
@@ -208,12 +224,13 @@ export const handler = async (event: Event) => {
           qualityIssues:   quality.issues,
           qualityWarnings: quality.warnings,
         }
-      }      await updateTopic(topicId, 'FAILED', quality.issues.join('; '))
+      }
+      await updateTopic(topicId, 'FAILED', quality.issues.join('; '))
       throw new Error(`Quality gate failed after ${attempt} attempts: ${quality.issues.join('; ')}`)
     }
 
     log({ lambda: 'content-generator', step: 'quality-gate', status: 'complete', pct: 100,
-      meta: { wordCount: quality.wordCount } })
+      meta: { wordCount: quality.wordCount, status: quality.status } })
     await updateTopicStep(topicId, 'Content ready · awaiting publish', dynamo, process.env.TOPICS_TABLE!)
 
     return {
@@ -221,9 +238,10 @@ export const handler = async (event: Event) => {
       keyword,
       category,
       article,
-      wordCount: quality.wordCount,
-      readingTime: Math.ceil(quality.wordCount / 200),
-      shouldRetry: false,
+      qualityStatus: quality.status,
+      wordCount:     quality.wordCount,
+      readingTime:   Math.ceil(quality.wordCount / 200),
+      shouldRetry:   false,
     }
   } catch (err) {
     log({ lambda: 'content-generator', step: 'handler-error', status: 'error', pct: 0,
@@ -825,14 +843,44 @@ function checkQuality(content: string) {
     }
   }
 
+  // ── Source credibility ─────────────────────────────────────────────────
+  const statsMatches  = content.match(/\d+%|\$[\d,]+|[\d.]+ (?:million|billion)/gi) ?? []
+  const sourceMatches = content.match(/according to|reported by|per [A-Z]/gi) ?? []
+  const statsCount    = statsMatches.length
+  const sourceCount   = sourceMatches.length
+
+  if (statsCount > 0 && sourceCount === 0) {
+    issues.push('Article contains statistics but cites zero sources')
+    score -= 30
+  } else if (statsCount > 4 && sourceCount < 2) {
+    issues.push(`${statsCount} statistics found but fewer than 2 sources cited`)
+    score -= 20
+  }
+
+  // ── SEO score ──────────────────────────────────────────────────────────
+  let seoScore = 0
+  if (content.length >= 7000) seoScore += 20
+  if (h2Count >= 5)           seoScore += 20
+  // title/slug not available in lambda — compensate with callout bonus
+  if (totalCallouts >= 3)     seoScore += 20
+  if (hasInternalLink)        seoScore += 20
+  if (wordCount >= 1500)      seoScore += 20
+
+  const finalScore = Math.max(0, score)
+
   return {
-    // Hard issues (word count, H2 count, zero E-E-A-T) are the real gates.
-    // Threshold 50 so advisory warnings don't block an otherwise good article.
-    passed: issues.length === 0 && score >= 50,
+    passed:        issues.length === 0 && finalScore >= 85,
+    status:        finalScore >= 95 ? 'PUBLISHED' as const : finalScore >= 85 ? 'REVIEW' as const : 'FAILED' as const,
     wordCount,
-    score: Math.max(0, score),
+    h2Count,
+    sourceCount,
+    statsCount,
+    score:         finalScore,
+    seoScore,
     issues,
     warnings,
+    checkedAt:     new Date().toISOString(),
+    attemptNumber: 1,
   }
 }
 
